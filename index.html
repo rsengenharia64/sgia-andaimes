@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SGIA — Sistema de Gestão de Integridade de Andaimes</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0d1117; --bg2:#161b22; --bg3:#1c2330; --line:#2a3441;
+  --txt:#e6edf3; --txt2:#9aa7b4; --txt3:#6b7785;
+  --azul:#2f81f7; --azul-d:#1f6feb;
+  --verde:#3fb950; --verde-bg:#0f2e17; --verde-line:#238636;
+  --amarelo:#d29922; --amarelo-bg:#2e2410; --amarelo-line:#9e6a03;
+  --vermelho:#f85149; --vermelho-bg:#2e1212; --vermelho-line:#a40e0e;
+  --cinza:#6b7785; --cinza-bg:#1c2330;
+  --shadow:0 8px 32px rgba(0,0,0,.45);
+  --r:14px; --r2:10px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:var(--bg); color:var(--txt); overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font-family:inherit;font-size:15px}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
+
+/* ===== LOGIN ===== */
+#login{
+  position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 30% 20%,#16243d,#0d1117 60%);padding:20px;
+}
+.login-card{
+  background:var(--bg2);border:1px solid var(--line);border-radius:18px;
+  padding:34px 28px;width:100%;max-width:380px;box-shadow:var(--shadow);
+}
+.login-logo{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.login-logo .ico{
+  width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,var(--azul),#7c3aed);
+  display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;
+}
+.login-logo h1{font-size:21px;font-weight:800;letter-spacing:-.5px}
+.login-sub{color:var(--txt2);font-size:13px;margin-bottom:26px;line-height:1.4}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:12px;color:var(--txt2);margin-bottom:7px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.field input,.field select,.field textarea{
+  width:100%;background:var(--bg);border:1px solid var(--line);border-radius:var(--r2);
+  padding:12px 14px;color:var(--txt);outline:none;transition:border .15s;
+}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--azul)}
+.btn{
+  width:100%;background:var(--azul);color:#fff;font-weight:700;font-size:15px;
+  padding:13px;border-radius:var(--r2);transition:background .15s,transform .1s;
+}
+.btn:active{transform:scale(.98)}
+.btn:hover{background:var(--azul-d)}
+.btn-sec{background:var(--bg3);border:1px solid var(--line);color:var(--txt)}
+.btn-sec:hover{background:var(--line)}
+.login-perfis{margin-top:22px;border-top:1px solid var(--line);padding-top:18px}
+.login-perfis p{font-size:11px;color:var(--txt3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px}
+.perfil-chip{
+  display:inline-flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--line);
+  border-radius:20px;padding:6px 12px;font-size:12px;margin:0 6px 6px 0;transition:.15s;
+}
+.perfil-chip:hover{border-color:var(--azul);background:var(--bg3)}
+
+/* ===== APP SHELL ===== */
+#app{display:none;min-height:100vh;flex-direction:column}
+.topbar{
+  position:sticky;top:0;z-index:100;background:var(--bg2);border-bottom:1px solid var(--line);
+  padding:11px 16px;display:flex;align-items:center;gap:12px;
+}
+.topbar .logo-mini{
+  width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--azul),#7c3aed);
+  display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;
+}
+.topbar .titlewrap{flex:1;min-width:0}
+.topbar .titlewrap h2{font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar .titlewrap span{font-size:11px;color:var(--txt2)}
+.topbar .userbtn{
+  display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--line);
+  border-radius:22px;padding:5px 12px 5px 6px;font-size:13px;
+}
+.topbar .avatar{
+  width:28px;height:28px;border-radius:50%;background:var(--azul);
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;
+}
+.topbar .userbtn .pf{font-size:10px;color:var(--txt2);display:block;line-height:1.1}
+
+/* ===== NAV ===== */
+.nav{
+  display:flex;gap:4px;padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--line);
+  overflow-x:auto;scrollbar-width:none;position:sticky;top:57px;z-index:99;
+}
+.nav::-webkit-scrollbar{display:none}
+.nav button{
+  display:flex;align-items:center;gap:7px;padding:9px 15px;border-radius:9px;font-size:13.5px;
+  font-weight:600;color:var(--txt2);white-space:nowrap;transition:.15s;
+}
+.nav button.active{background:var(--azul);color:#fff}
+.nav button:not(.active):hover{background:var(--bg3);color:var(--txt)}
+.nav button .ic{font-size:15px}
+
+/* ===== CONTENT ===== */
+.content{flex:1;padding:18px 16px 90px;max-width:1280px;width:100%;margin:0 auto}
+.page{display:none;animation:fade .25s ease}
+.page.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.page-head{margin-bottom:18px}
+.page-head h3{font-size:22px;font-weight:800;letter-spacing:-.5px;display:flex;align-items:center;gap:9px}
+.page-head p{color:var(--txt2);font-size:13.5px;margin-top:3px}
+
+/* ===== CARDS / KPI ===== */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+.kpi{
+  background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;position:relative;overflow:hidden;
+}
+.kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--azul)}
+.kpi.green::before{background:var(--verde)} .kpi.yellow::before{background:var(--amarelo)}
+.kpi.red::before{background:var(--vermelho)} .kpi.blue::before{background:var(--azul)}
+.kpi .lab{font-size:11.5px;color:var(--txt2);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+.kpi .val{font-size:32px;font-weight:800;margin-top:6px;letter-spacing:-1px;line-height:1}
+.kpi .meta{font-size:11.5px;color:var(--txt3);margin-top:5px}
+.kpi .pct{font-size:13px;font-weight:700;margin-top:4px}
+
+.panel{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:16px}
+.panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap}
+.panel-head h4{font-size:15px;font-weight:700}
+.panel-head .sub{font-size:12px;color:var(--txt3)}
+
+/* barra de disponibilidade */
+.availbar{height:30px;border-radius:8px;overflow:hidden;display:flex;background:var(--bg);border:1px solid var(--line)}
+.availbar span{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;transition:width .6s ease;min-width:0}
+.legend{display:flex;gap:18px;margin-top:12px;flex-wrap:wrap}
+.legend div{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--txt2)}
+.dot{width:11px;height:11px;border-radius:50%}
+.dot.g{background:var(--verde)} .dot.y{background:var(--amarelo)} .dot.r{background:var(--vermelho)} .dot.c{background:var(--cinza)}
+
+/* ===== STATUS BADGE ===== */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:700;white-space:nowrap}
+.badge.g{background:var(--verde-bg);color:var(--verde);border:1px solid var(--verde-line)}
+.badge.y{background:var(--amarelo-bg);color:var(--amarelo);border:1px solid var(--amarelo-line)}
+.badge.r{background:var(--vermelho-bg);color:var(--vermelho);border:1px solid var(--vermelho-line)}
+.badge.c{background:var(--cinza-bg);color:var(--txt2);border:1px solid var(--line)}
+
+/* ===== REGENERADORES / GRID PLATAFORMAS ===== */
+.regen-tabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+.regen-tab{
+  background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:12px 18px;
+  display:flex;flex-direction:column;gap:3px;min-width:130px;transition:.15s;flex:1;
+}
+.regen-tab.active{border-color:var(--azul);background:var(--bg3)}
+.regen-tab:hover{border-color:var(--azul)}
+.regen-tab .rt{font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px}
+.regen-tab .rmini{display:flex;gap:5px;margin-top:5px}
+.regen-tab .rmini b{font-size:11px;padding:1px 7px;border-radius:10px;font-weight:700}
+.regen-tab .rmini .mg{background:var(--verde-bg);color:var(--verde)}
+.regen-tab .rmini .my{background:var(--amarelo-bg);color:var(--amarelo)}
+.regen-tab .rmini .mr{background:var(--vermelho-bg);color:var(--vermelho)}
+
+.plat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:11px}
+.plat-card{
+  background:var(--bg2);border:1px solid var(--line);border-radius:var(--r2);padding:13px;
+  cursor:pointer;transition:.15s;position:relative;overflow:hidden;
+}
+.plat-card::after{content:'';position:absolute;top:0;right:0;width:42px;height:42px;border-radius:0 0 0 42px;opacity:.16}
+.plat-card.g::after{background:var(--verde)} .plat-card.y::after{background:var(--amarelo)} .plat-card.r::after{background:var(--vermelho)} .plat-card.c::after{background:var(--cinza)}
+.plat-card:hover{transform:translateY(-2px);border-color:var(--azul);box-shadow:var(--shadow)}
+.plat-card .pcod{font-size:19px;font-weight:800;letter-spacing:-.5px}
+.plat-card .pstat{margin-top:9px}
+.plat-card .pdate{font-size:10.5px;color:var(--txt3);margin-top:8px;display:flex;align-items:center;gap:4px}
+.plat-card .pwarn{font-size:10px;color:var(--vermelho);margin-top:3px;font-weight:600}
+
+/* filtros */
+.filterbar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.filterbar input,.filterbar select{
+  background:var(--bg2);border:1px solid var(--line);border-radius:9px;padding:9px 13px;color:var(--txt);outline:none;
+}
+.filterbar input{flex:1;min-width:160px}
+.fchip{
+  background:var(--bg2);border:1px solid var(--line);border-radius:20px;padding:7px 14px;font-size:12.5px;
+  font-weight:600;color:var(--txt2);transition:.15s;
+}
+.fchip.active{background:var(--azul);color:#fff;border-color:var(--azul)}
+
+/* ===== MODAL FICHA ===== */
+.modal-bg{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.7);display:none;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;backdrop-filter:blur(3px)}
+.modal-bg.open{display:flex}
+.modal{
+  background:var(--bg2);border:1px solid var(--line);border-radius:18px;width:100%;max-width:720px;
+  box-shadow:var(--shadow);margin:auto 0;animation:pop .25s ease;
+}
+@keyframes pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+.modal-head{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg2);border-radius:18px 18px 0 0;z-index:2}
+.modal-head .mt{font-size:20px;font-weight:800;display:flex;align-items:center;gap:10px}
+.modal-head .mc{font-size:13px;color:var(--txt2);margin-top:2px}
+.modal-x{width:34px;height:34px;border-radius:9px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--txt2)}
+.modal-x:hover{background:var(--line);color:var(--txt)}
+.modal-body{padding:20px}
+.modal-tabs{display:flex;gap:5px;margin-bottom:18px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.modal-tabs::-webkit-scrollbar{display:none}
+.modal-tabs button{padding:9px 14px;font-size:13px;font-weight:600;color:var(--txt2);border-bottom:2px solid transparent;white-space:nowrap}
+.modal-tabs button.active{color:var(--azul);border-bottom-color:var(--azul)}
+.mtab{display:none} .mtab.active{display:block;animation:fade .2s}
+
+.info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:13px;margin-bottom:18px}
+.info-item{background:var(--bg);border:1px solid var(--line);border-radius:var(--r2);padding:12px 14px}
+.info-item .il{font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+.info-item .iv{font-size:15px;font-weight:600;margin-top:5px}
+
+/* checklist */
+.chk-item{background:var(--bg);border:1px solid var(--line);border-radius:var(--r2);padding:13px 15px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.chk-item .cl{font-size:14px;font-weight:600;display:flex;align-items:center;gap:9px}
+.chk-item .cl .cic{font-size:17px}
+.chk-opts{display:flex;gap:6px}
+.chk-opt{padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;border:1px solid var(--line);color:var(--txt2);background:var(--bg2);transition:.12s}
+.chk-opt.sel-c{background:var(--verde-bg);color:var(--verde);border-color:var(--verde-line)}
+.chk-opt.sel-nc{background:var(--vermelho-bg);color:var(--vermelho);border-color:var(--vermelho-line)}
+.chk-opt.sel-na{background:var(--cinza-bg);color:var(--txt);border-color:var(--line)}
+
+/* fotos */
+.foto-gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;margin-top:12px}
+.foto-thumb{position:relative;aspect-ratio:1;border-radius:var(--r2);overflow:hidden;border:1px solid var(--line);background:var(--bg)}
+.foto-thumb img{width:100%;height:100%;object-fit:cover;cursor:pointer}
+.foto-thumb .fdel{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:6px;background:rgba(0,0,0,.7);color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center}
+.foto-thumb .fcap{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);font-size:9.5px;padding:3px 5px;color:#cdd6e0}
+.upload-zone{border:2px dashed var(--line);border-radius:var(--r2);padding:26px;text-align:center;color:var(--txt2);transition:.15s;cursor:pointer}
+.upload-zone:hover{border-color:var(--azul);color:var(--txt)}
+.upload-zone .uic{font-size:32px;margin-bottom:8px}
+
+/* histórico timeline */
+.tl{position:relative;padding-left:26px}
+.tl::before{content:'';position:absolute;left:7px;top:6px;bottom:6px;width:2px;background:var(--line)}
+.tl-item{position:relative;padding-bottom:18px}
+.tl-item::before{content:'';position:absolute;left:-23px;top:4px;width:12px;height:12px;border-radius:50%;background:var(--azul);border:2px solid var(--bg2)}
+.tl-item.g::before{background:var(--verde)} .tl-item.y::before{background:var(--amarelo)} .tl-item.r::before{background:var(--vermelho)}
+.tl-item .tlh{font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tl-item .tlm{font-size:12px;color:var(--txt3);margin-top:3px}
+.tl-item .tld{font-size:13px;color:var(--txt2);margin-top:5px;line-height:1.4}
+
+/* QR */
+.qr-wrap{display:flex;gap:20px;align-items:center;flex-wrap:wrap;background:var(--bg);border:1px solid var(--line);border-radius:var(--r2);padding:18px}
+.qr-box{background:#fff;padding:12px;border-radius:10px;flex-shrink:0}
+.qr-info{flex:1;min-width:200px}
+.qr-info p{font-size:13px;color:var(--txt2);line-height:1.5;margin-bottom:6px}
+
+/* mapa */
+.mapa-wrap{position:relative;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+#mapaImg{width:100%;display:block}
+.mapa-empty{padding:50px 20px;text-align:center;color:var(--txt2)}
+.mapa-empty .mic{font-size:44px;margin-bottom:12px;opacity:.5}
+.mapa-pin{position:absolute;width:28px;height:28px;border-radius:50%;border:3px solid #fff;transform:translate(-50%,-50%);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.5);transition:transform .12s}
+.mapa-pin:hover{transform:translate(-50%,-50%) scale(1.25);z-index:5}
+.mapa-pin.g{background:var(--verde)} .mapa-pin.y{background:var(--amarelo)} .mapa-pin.r{background:var(--vermelho)} .mapa-pin.c{background:var(--cinza)}
+
+/* tabela */
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{text-align:left;padding:11px 12px;color:var(--txt2);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--line);font-weight:600;white-space:nowrap}
+.tbl td{padding:11px 12px;border-bottom:1px solid var(--line)}
+.tbl tr:hover td{background:var(--bg3)}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r2)}
+
+/* relatórios cards */
+.rep-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:13px}
+.rep-card{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:18px;transition:.15s}
+.rep-card:hover{border-color:var(--azul)}
+.rep-card .ric{width:44px;height:44px;border-radius:11px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:12px}
+.rep-card h4{font-size:15px;font-weight:700;margin-bottom:5px}
+.rep-card p{font-size:12.5px;color:var(--txt2);line-height:1.4;margin-bottom:14px}
+
+/* usuários */
+.user-row{display:flex;align-items:center;gap:13px;padding:13px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r2);margin-bottom:10px}
+.user-row .uav{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex-shrink:0;color:#fff}
+.user-row .uinfo{flex:1;min-width:0}
+.user-row .uinfo .un{font-size:14.5px;font-weight:700}
+.user-row .uinfo .ue{font-size:12px;color:var(--txt3)}
+.perm-tag{font-size:10px;padding:2px 8px;border-radius:10px;background:var(--bg3);color:var(--txt2);border:1px solid var(--line);margin:2px 3px 0 0;display:inline-block}
+
+/* admin módulos */
+.mod-row{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r2);margin-bottom:10px;gap:12px}
+.mod-row .minfo{flex:1}
+.mod-row .minfo .mn{font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:8px}
+.mod-row .minfo .md{font-size:12px;color:var(--txt2);margin-top:3px}
+.switch{position:relative;width:48px;height:27px;flex-shrink:0}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:var(--line);border-radius:27px;transition:.2s;cursor:pointer}
+.slider::before{content:'';position:absolute;height:21px;width:21px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+.switch input:checked+.slider{background:var(--verde)}
+.switch input:checked+.slider::before{transform:translateX(21px)}
+
+/* botões pequenos */
+.btn-sm{padding:8px 15px;border-radius:9px;font-size:13px;font-weight:700;background:var(--azul);color:#fff;display:inline-flex;align-items:center;gap:6px}
+.btn-sm:hover{background:var(--azul-d)}
+.btn-sm.sec{background:var(--bg3);border:1px solid var(--line);color:var(--txt)}
+.btn-sm.sec:hover{background:var(--line)}
+.btn-sm.danger{background:var(--vermelho)}
+.btn-sm.ghost{background:transparent;border:1px solid var(--line);color:var(--txt2)}
+
+.status-set{display:flex;gap:8px;margin:14px 0}
+.status-btn{flex:1;padding:13px;border-radius:var(--r2);font-weight:700;font-size:14px;border:1px solid var(--line);background:var(--bg);color:var(--txt2);display:flex;flex-direction:column;align-items:center;gap:5px;transition:.12s}
+.status-btn .sbi{font-size:20px}
+.status-btn.act-g{background:var(--verde-bg);color:var(--verde);border-color:var(--verde-line)}
+.status-btn.act-y{background:var(--amarelo-bg);color:var(--amarelo);border-color:var(--amarelo-line)}
+.status-btn.act-r{background:var(--vermelho-bg);color:var(--vermelho);border-color:var(--vermelho-line)}
+
+/* toast */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(120px);background:var(--bg3);border:1px solid var(--line);border-radius:12px;padding:13px 20px;font-size:13.5px;font-weight:600;z-index:3000;box-shadow:var(--shadow);transition:transform .3s;display:flex;align-items:center;gap:9px;max-width:90vw}
+#toast.show{transform:translateX(-50%) translateY(0)}
+#toast.ok{border-color:var(--verde-line)} #toast.err{border-color:var(--vermelho-line)}
+
+/* lightbox */
+#lightbox{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;padding:20px}
+#lightbox.open{display:flex}
+#lightbox img{max-width:100%;max-height:90vh;border-radius:10px}
+#lightbox .lbx{position:absolute;top:20px;right:20px;width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.15);color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center}
+
+.empty{text-align:center;padding:40px 20px;color:var(--txt3)}
+.empty .eic{font-size:40px;margin-bottom:10px;opacity:.4}
+.hidden{display:none!important}
+.row-2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+@media(max-width:560px){.row-2{grid-template-columns:1fr}.kpi .val{font-size:27px}.status-set{flex-direction:column}}
+.muted{color:var(--txt3);font-size:12px}
+.tag-next{font-size:11px;color:var(--amarelo);font-weight:600}
+.scope-note{background:var(--bg3);border:1px solid var(--line);border-left:3px solid var(--azul);border-radius:8px;padding:11px 14px;font-size:12.5px;color:var(--txt2);line-height:1.5;margin-bottom:16px}
+.footer{text-align:center;padding:22px 16px 30px;color:var(--txt3);font-size:12.5px;border-top:1px solid var(--line);margin-top:10px}
+.footer b{color:var(--txt2);font-weight:700}
+.footer .fdev{display:inline-flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--line);border-radius:20px;padding:6px 14px;margin-top:4px}
+.login-footer{text-align:center;margin-top:18px;font-size:11.5px;color:var(--txt3)}
+.login-footer b{color:var(--txt2)}
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<div id="login">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="ico">🏗️</div>
+      <h1>SGIA</h1>
+    </div>
+    <p class="login-sub">Sistema de Gestão de Integridade de Andaimes<br>Regeneradores 1 a 4 — Controle de plataformas</p>
+    <div class="field">
+      <label>Usuário</label>
+      <input type="text" id="loginUser" placeholder="seu.usuario" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Senha</label>
+      <input type="password" id="loginPass" placeholder="••••••••">
+    </div>
+    <button class="btn" onclick="doLogin()">Entrar no sistema</button>
+    <div class="login-perfis">
+      <p>Acesso rápido para demonstração</p>
+      <div id="perfilChips"></div>
+    </div>
+    <div class="login-footer">Desenvolvido por <b>Eng. Rander Bruno</b></div>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="app">
+  <div class="topbar">
+    <div class="logo-mini">🏗️</div>
+    <div class="titlewrap">
+      <h2>SGIA — Integridade de Andaimes</h2>
+      <span id="topSub">Regeneradores 1 a 4</span>
+    </div>
+    <button class="userbtn" onclick="goPage('perfil')">
+      <div class="avatar" id="topAvatar">AD</div>
+      <div style="text-align:left">
+        <span id="topUserName" style="font-weight:700">—</span>
+        <span class="pf" id="topUserRole">—</span>
+      </div>
+    </button>
+  </div>
+
+  <div class="nav" id="navMenu"></div>
+
+  <div class="content" id="content"></div>
+
+  <div class="footer">
+    🏗️ <b>SGIA</b> — Sistema de Gestão de Integridade de Andaimes<br>
+    <span class="fdev">⚙️ Desenvolvido por <b>Eng. Rander Bruno</b></span>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg"><div class="modal" id="modalBox"></div></div>
+<div id="lightbox"><div class="lbx" onclick="closeLightbox()">✕</div><img id="lightboxImg" src=""></div>
+<div id="toast"></div>
+
+<script>
+/* ====================================================================
+   SGIA — núcleo de dados e lógica
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   BLOCO DE CONFIGURAÇÃO ÚNICO. Mudar regras de negócio = editar aqui.
+   Trocar nº de regeneradores, plataformas por regen, prazo de inspeção,
+   itens do checklist, perfis e permissões: tudo neste objeto CONFIG.
+   ==================================================================== */
+const CONFIG = {
+  empresa: "Sua Empresa de Andaimes",
+  cliente: "Cliente Industrial",
+  // Quantos regeneradores existem e como se chamam
+  regeneradores: [
+    {id:1, nome:"Regenerador 1"},
+    {id:2, nome:"Regenerador 2"},
+    {id:3, nome:"Regenerador 3"},
+    {id:4, nome:"Regenerador 4"}
+  ],
+  // Plataformas por regenerador (letras A..). 25 => A a Y
+  plataformasPorRegen: 25,
+  // Prazo padrão entre inspeções, em dias
+  prazoInspecaoDias: 7,
+  // Itens do checklist de inspeção (pode adicionar/remover livremente)
+  checklist: [
+    {id:"piso",      nome:"Piso",                       ic:"🟫"},
+    {id:"guarda",    nome:"Guarda-corpo",               ic:"🚧"},
+    {id:"rodape",    nome:"Rodapé",                     ic:"📏"},
+    {id:"escada",    nome:"Escada de acesso",           ic:"🪜"},
+    {id:"estrutura", nome:"Estrutura",                  ic:"🏗️"},
+    {id:"etiqueta",  nome:"Etiqueta de identificação",  ic:"🏷️"}
+  ],
+  // URL base para os QR Codes (em produção vira o domínio real do sistema)
+  baseUrl: "https://sgia.suaempresa.com.br/p/",
+  // MÓDULOS do sistema — o admin pode ligar/desligar. Cada um é independente.
+  modulos: [
+    {id:"dashboard",  nome:"Dashboard Geral",        desc:"Visão consolidada com KPIs e indicadores coloridos.", ic:"📊", on:true,  fixo:true},
+    {id:"regen",      nome:"Regeneradores",          desc:"Plataformas agrupadas por equipamento.",              ic:"🏭", on:true,  fixo:true},
+    {id:"mapa",       nome:"Mapa Visual (Drone)",    desc:"Posicionar plataformas sobre foto aérea.",            ic:"🗺️", on:true,  fixo:false},
+    {id:"relatorios", nome:"Relatórios PDF",         desc:"Geração de relatórios e exportação em PDF.",          ic:"📄", on:true,  fixo:false},
+    {id:"qrcode",     nome:"QR Code",                desc:"QR exclusivo por plataforma para inspeção em campo.", ic:"🔳", on:true,  fixo:false},
+    {id:"historico",  nome:"Histórico e Auditoria",  desc:"Rastreabilidade completa de todas as ações.",         ic:"🕓", on:true,  fixo:false},
+    {id:"usuarios",   nome:"Controle de Usuários",   desc:"Perfis e permissões de acesso.",                      ic:"👥", on:true,  fixo:false}
+  ]
+};
+
+/* ===== PERFIS E PERMISSÕES =====
+   Cada perfil tem um conjunto de permissões. ver=ler, inspecionar=preencher
+   checklist/status, fotos=upload, usuarios=gerir pessoas, admin=configurar sistema */
+const PERFIS = {
+  admin:        {nome:"Administrador", cor:"#7c3aed", perms:["ver","inspecionar","fotos","relatorios","usuarios","admin","mapa_edit"]},
+  coordenador:  {nome:"Coordenador",   cor:"#2f81f7", perms:["ver","inspecionar","fotos","relatorios","mapa_edit"]},
+  supervisor:   {nome:"Supervisor",    cor:"#3fb950", perms:["ver","inspecionar","fotos","relatorios"]},
+  encarregado:  {nome:"Encarregado",   cor:"#d29922", perms:["ver","inspecionar","fotos"]},
+  visualizador: {nome:"Visualizador (Cliente)", cor:"#6b7785", perms:["ver","relatorios"]}
+};
+const PERM_LABELS = {ver:"Visualizar",inspecionar:"Inspecionar",fotos:"Anexar fotos",relatorios:"Relatórios",usuarios:"Gerir usuários",admin:"Configurar sistema",mapa_edit:"Editar mapa"};
+
+/* ===== USUÁRIOS DE DEMONSTRAÇÃO ===== */
+let USUARIOS = [
+  {id:1, user:"admin",      nome:"Carlos Andrade",   perfil:"admin",        email:"carlos@empresa.com"},
+  {id:2, user:"coord",      nome:"Marina Lopes",     perfil:"coordenador",  email:"marina@empresa.com"},
+  {id:3, user:"super",      nome:"Roberto Dias",     perfil:"supervisor",   email:"roberto@empresa.com"},
+  {id:4, user:"encar",      nome:"José Ferreira",    perfil:"encarregado",  email:"jose@empresa.com"},
+  {id:5, user:"cliente",    nome:"Ana (Cliente)",    perfil:"visualizador", email:"ana@cliente.com"}
+];
+
+/* ===== ESTADO GLOBAL ===== */
+let STATE = {
+  usuario:null,          // usuário logado
+  plataformas:[],        // todas as plataformas (ativos)
+  auditoria:[],          // log global de rastreabilidade
+  regenAtivo:1,          // aba de regenerador selecionada
+  filtroStatus:"todos",  // filtro do grid
+  busca:"",
+  platAtual:null,        // plataforma aberta na ficha
+  modalTab:"resumo",
+  mapaImg:null,          // dataURL da foto de drone
+  pinMode:false          // modo de posicionar pino no mapa
+};
+
+/* ===== HELPERS ===== */
+const LETRAS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const STATUS_MAP = {
+  liberada:   {key:"g", label:"Liberada",    ic:"✅", badge:"g"},
+  restrita:   {key:"y", label:"Restrita",    ic:"⚠️", badge:"y"},
+  interditada:{key:"r", label:"Interditada", ic:"⛔", badge:"r"},
+  pendente:   {key:"c", label:"Sem inspeção",ic:"⏳", badge:"c"}
+};
+function hoje(){return new Date();}
+function fmtData(d){if(!d)return "—";const x=new Date(d);return x.toLocaleDateString('pt-BR');}
+function fmtDataHora(d){const x=new Date(d);return x.toLocaleDateString('pt-BR')+' '+x.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
+function addDias(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
+function diasEntre(a,b){return Math.floor((new Date(b)-new Date(a))/(1000*60*60*24));}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function temPerm(p){return STATE.usuario && PERFIS[STATE.usuario.perfil].perms.includes(p);}
+function modOn(id){const m=CONFIG.modulos.find(x=>x.id===id);return m?m.on:false;}
+function iniciais(nome){return nome.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();}
+
+/* ===== GERAÇÃO DAS PLATAFORMAS (ativos individuais) =====
+   Cria N regeneradores x M plataformas, cada uma com estado realista
+   de demonstração: histórico, checklist, datas e algumas fotos. */
+function gerarPlataformas(){
+  const arr=[];
+  const responsaveis=["Roberto Dias","José Ferreira","Marina Lopes","Carlos Andrade"];
+  CONFIG.regeneradores.forEach(reg=>{
+    for(let i=0;i<CONFIG.plataformasPorRegen;i++){
+      const cod = reg.id + LETRAS[i];
+      // distribuição de status para demonstração ficar visualmente rica
+      const r = Math.random();
+      let status, inspecionada=true;
+      if(r<0.62) status="liberada";
+      else if(r<0.82) status="restrita";
+      else if(r<0.93) status="interditada";
+      else {status="pendente"; inspecionada=false;}
+
+      const diasAtras = Math.floor(Math.random()*9);
+      const ultInsp = inspecionada ? addDias(hoje(),-diasAtras) : null;
+      const resp = responsaveis[Math.floor(Math.random()*responsaveis.length)];
+
+      // checklist coerente com o status
+      const chk={};
+      CONFIG.checklist.forEach(it=>{
+        if(!inspecionada){chk[it.id]=null;return;}
+        if(status==="liberada") chk[it.id]="conforme";
+        else if(status==="restrita") chk[it.id]=Math.random()<0.25?"nao_conforme":(Math.random()<0.15?"na":"conforme");
+        else chk[it.id]=Math.random()<0.5?"nao_conforme":"conforme";
+      });
+
+      const plat={
+        cod, regen:reg.id, regenNome:reg.nome,
+        status, inspecionada,
+        ultInspecao: ultInsp,
+        proxInspecao: ultInsp ? addDias(ultInsp, CONFIG.prazoInspecaoDias) : null,
+        responsavel: inspecionada ? resp : null,
+        obs: status==="restrita" ? "Travessa do guarda-corpo necessita reaperto." : (status==="interditada" ? "Piso danificado, plataforma isolada até reparo." : ""),
+        checklist: chk,
+        fotos: [],
+        historico: [],
+        posMapa: null // {x,y} percentual sobre a foto de drone
+      };
+
+      // monta histórico inicial
+      if(inspecionada){
+        plat.historico.push({
+          data: ultInsp, usuario: resp, acao:"Inspeção realizada",
+          status, detalhe:`Plataforma classificada como ${STATUS_MAP[status].label}.`
+        });
+        if(status!=="liberada"){
+          plat.historico.push({
+            data: addDias(ultInsp,-CONFIG.prazoInspecaoDias), usuario:resp, acao:"Inspeção anterior",
+            status:"liberada", detalhe:"Sem restrições na inspeção anterior."
+          });
+        }
+      }
+      arr.push(plat);
+    }
+  });
+  return arr;
+}
+
+/* registra evento no log global de auditoria */
+function logAudit(acao, alvo, detalhe){
+  STATE.auditoria.unshift({
+    id:uid(), data:hoje(), usuario:STATE.usuario.nome, perfil:PERFIS[STATE.usuario.perfil].nome,
+    acao, alvo, detalhe
+  });
+}
+</script>
+
+<script>
+/* ====================================================================
+   LOGIN
+   ==================================================================== */
+function renderChips(){
+  const box=document.getElementById('perfilChips');
+  box.innerHTML = USUARIOS.map(u=>{
+    const p=PERFIS[u.perfil];
+    return `<button class="perfil-chip" onclick="quickLogin('${u.user}')">
+      <span style="width:9px;height:9px;border-radius:50%;background:${p.cor};display:inline-block"></span>
+      ${p.nome}</button>`;
+  }).join('');
+}
+function quickLogin(user){
+  document.getElementById('loginUser').value=user;
+  document.getElementById('loginPass').value="demo";
+  doLogin();
+}
+function doLogin(){
+  const u=document.getElementById('loginUser').value.trim().toLowerCase();
+  const usr=USUARIOS.find(x=>x.user===u);
+  if(!usr){toast("Usuário não encontrado. Use os botões de acesso rápido.","err");return;}
+  STATE.usuario=usr;
+  // inicializa dados na primeira entrada
+  if(STATE.plataformas.length===0){
+    STATE.plataformas=gerarPlataformas();
+    STATE.auditoria=[{id:uid(),data:hoje(),usuario:"Sistema",perfil:"—",acao:"Carga inicial",alvo:"Sistema",detalhe:`${STATE.plataformas.length} plataformas cadastradas nos ${CONFIG.regeneradores.length} regeneradores.`}];
+  }
+  document.getElementById('login').style.display='none';
+  document.getElementById('app').style.display='flex';
+  // topbar
+  document.getElementById('topAvatar').textContent=iniciais(usr.nome);
+  document.getElementById('topAvatar').style.background=PERFIS[usr.perfil].cor;
+  document.getElementById('topUserName').textContent=usr.nome.split(' ')[0];
+  document.getElementById('topUserRole').textContent=PERFIS[usr.perfil].nome;
+  buildNav();
+  goPage('dashboard');
+  toast(`Bem-vindo, ${usr.nome.split(' ')[0]}!`,"ok");
+}
+function logout(){
+  STATE.usuario=null;
+  document.getElementById('app').style.display='none';
+  document.getElementById('login').style.display='flex';
+  document.getElementById('loginUser').value='';
+  document.getElementById('loginPass').value='';
+}
+
+/* ====================================================================
+   NAVEGAÇÃO — respeita módulos ligados e permissões do perfil
+   ==================================================================== */
+const PAGES = [
+  {id:"dashboard",  mod:"dashboard",  perm:"ver",        ic:"📊", nome:"Dashboard"},
+  {id:"regen",      mod:"regen",      perm:"ver",        ic:"🏭", nome:"Regeneradores"},
+  {id:"mapa",       mod:"mapa",       perm:"ver",        ic:"🗺️", nome:"Mapa Visual"},
+  {id:"relatorios", mod:"relatorios", perm:"relatorios", ic:"📄", nome:"Relatórios"},
+  {id:"historico",  mod:"historico",  perm:"ver",        ic:"🕓", nome:"Auditoria"},
+  {id:"usuarios",   mod:"usuarios",   perm:"usuarios",   ic:"👥", nome:"Usuários"},
+  {id:"admin",      mod:null,         perm:"admin",      ic:"⚙️", nome:"Configurações"}
+];
+let currentPage="dashboard";
+function buildNav(){
+  const nav=document.getElementById('navMenu');
+  nav.innerHTML = PAGES.filter(pg=>{
+    if(pg.mod && !modOn(pg.mod)) return false;          // módulo desligado
+    if(pg.perm && !temPerm(pg.perm)) return false;       // sem permissão
+    return true;
+  }).map(pg=>`<button data-pg="${pg.id}" onclick="goPage('${pg.id}')">
+     <span class="ic">${pg.ic}</span>${pg.nome}</button>`).join('');
+}
+function goPage(id){
+  // valida acesso
+  const pg=PAGES.find(p=>p.id===id);
+  if(pg){
+    if(pg.mod && !modOn(pg.mod)){toast("Módulo desativado pelo administrador.","err");return;}
+    if(pg.perm && !temPerm(pg.perm) && id!=='perfil'){toast("Você não tem permissão para esta área.","err");return;}
+  }
+  currentPage=id;
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.pg===id));
+  const c=document.getElementById('content');
+  const render={dashboard:renderDashboard,regen:renderRegen,mapa:renderMapa,relatorios:renderRelatorios,historico:renderHistorico,usuarios:renderUsuarios,admin:renderAdmin,perfil:renderPerfil};
+  (render[id]||renderDashboard)();
+  window.scrollTo(0,0);
+}
+
+/* ====================================================================
+   CÁLCULOS / KPIs
+   ==================================================================== */
+function stats(lista){
+  lista=lista||STATE.plataformas;
+  const s={total:lista.length,liberada:0,restrita:0,interditada:0,pendente:0,vencidas:0};
+  lista.forEach(p=>{
+    s[p.status]++;
+    if(p.proxInspecao && diasEntre(hoje(),p.proxInspecao)<0 && p.status!=="pendente") s.vencidas++;
+  });
+  s.pctDisp = s.total? Math.round((s.liberada/s.total)*100):0;
+  return s;
+}
+function ultimaAtualizacao(){
+  if(!STATE.auditoria.length) return "—";
+  return fmtDataHora(STATE.auditoria[0].data);
+}
+
+/* ====================================================================
+   PÁGINA: DASHBOARD GERAL
+   ==================================================================== */
+function renderDashboard(){
+  const s=stats();
+  const c=document.getElementById('content');
+  // barra de disponibilidade proporcional
+  const seg=(n,cls,lab)=>{const w=s.total?(n/s.total*100):0;return w>0?`<span class="${cls}" style="width:${w}%;background:var(--${lab})">${w>8?n:''}</span>`:'';};
+  c.innerHTML=`
+  <div class="page-head">
+    <h3>📊 Dashboard Geral</h3>
+    <p>Visão consolidada da integridade das plataformas — Regeneradores 1 a 4</p>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi blue"><div class="lab">Total de plataformas</div><div class="val">${s.total}</div><div class="meta">${CONFIG.regeneradores.length} regeneradores • ${CONFIG.plataformasPorRegen} por equipamento</div></div>
+    <div class="kpi green"><div class="lab">Liberadas</div><div class="val">${s.liberada}</div><div class="pct" style="color:var(--verde)">${s.pctDisp}% disponível</div></div>
+    <div class="kpi yellow"><div class="lab">Com restrição</div><div class="val">${s.restrita}</div><div class="meta">requerem atenção</div></div>
+    <div class="kpi red"><div class="lab">Interditadas</div><div class="val">${s.interditada}</div><div class="meta">${s.pendente} sem inspeção</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><h4>Disponibilidade das plataformas</h4><div class="sub">Proporção por situação atual</div></div>
+      <div class="badge ${s.pctDisp>=70?'g':s.pctDisp>=40?'y':'r'}">${s.pctDisp}% disponível</div>
+    </div>
+    <div class="availbar">
+      ${seg(s.liberada,'','verde')}${seg(s.restrita,'','amarelo')}${seg(s.interditada,'','vermelho')}${seg(s.pendente,'','cinza')}
+    </div>
+    <div class="legend">
+      <div><span class="dot g"></span>Liberada (${s.liberada})</div>
+      <div><span class="dot y"></span>Restrição (${s.restrita})</div>
+      <div><span class="dot r"></span>Interditada (${s.interditada})</div>
+      <div><span class="dot c"></span>Sem inspeção (${s.pendente})</div>
+    </div>
+  </div>
+
+  <div class="row-2">
+    <div class="panel">
+      <div class="panel-head"><h4>Situação por regenerador</h4></div>
+      ${CONFIG.regeneradores.map(reg=>{
+        const rs=stats(STATE.plataformas.filter(p=>p.regen===reg.id));
+        const w=rs.total?(rs.liberada/rs.total*100):0;
+        return `<div style="margin-bottom:14px;cursor:pointer" onclick="STATE.regenAtivo=${reg.id};goPage('regen')">
+          <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:6px">
+            <b>${reg.nome}</b><span class="muted">${rs.liberada}/${rs.total} liberadas</span>
+          </div>
+          <div class="availbar" style="height:18px">
+            <span style="width:${rs.liberada/rs.total*100}%;background:var(--verde)"></span>
+            <span style="width:${rs.restrita/rs.total*100}%;background:var(--amarelo)"></span>
+            <span style="width:${rs.interditada/rs.total*100}%;background:var(--vermelho)"></span>
+            <span style="width:${rs.pendente/rs.total*100}%;background:var(--cinza)"></span>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h4>⚠️ Requer atenção</h4></div>
+      ${(() => {
+        const alertas=STATE.plataformas.filter(p=>p.status==='interditada'||(p.proxInspecao&&diasEntre(hoje(),p.proxInspecao)<2&&p.status!=='pendente')).slice(0,6);
+        if(!alertas.length) return `<div class="empty"><div class="eic">✅</div>Nenhum alerta crítico no momento.</div>`;
+        return alertas.map(p=>{
+          const venc = p.proxInspecao && diasEntre(hoje(),p.proxInspecao)<0;
+          const tag = p.status==='interditada'?'Interditada':(venc?'Inspeção vencida':'Vence em breve');
+          return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);cursor:pointer" onclick="abrirFicha('${p.cod}')">
+            <span class="badge ${STATUS_MAP[p.status].badge}">${p.cod}</span>
+            <div style="flex:1"><div style="font-size:13px;font-weight:600">${p.regenNome}</div><div class="muted">${tag}</div></div>
+            <span style="color:var(--txt3)">›</span>
+          </div>`;
+        }).join('');
+      })()}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--txt3)">
+      <span>🕓 Última atualização: <b style="color:var(--txt2)">${ultimaAtualizacao()}</b></span>
+      <span>${s.vencidas} inspeção(ões) vencida(s)</span>
+    </div>
+  </div>`;
+}
+</script>
+
+<script>
+/* ====================================================================
+   PÁGINA: REGENERADORES — abas + grid de plataformas
+   ==================================================================== */
+function renderRegen(){
+  const c=document.getElementById('content');
+  c.innerHTML=`
+  <div class="page-head">
+    <h3>🏭 Regeneradores</h3>
+    <p>Selecione um equipamento e clique em uma plataforma para abrir a ficha</p>
+  </div>
+  <div class="regen-tabs" id="regenTabs"></div>
+  <div class="filterbar">
+    <input type="text" id="buscaPlat" placeholder="🔍 Buscar plataforma (ex: 1A)" oninput="STATE.busca=this.value;drawPlatGrid()">
+    <button class="fchip ${STATE.filtroStatus==='todos'?'active':''}" onclick="setFiltro('todos')">Todas</button>
+    <button class="fchip ${STATE.filtroStatus==='liberada'?'active':''}" onclick="setFiltro('liberada')">✅ Liberadas</button>
+    <button class="fchip ${STATE.filtroStatus==='restrita'?'active':''}" onclick="setFiltro('restrita')">⚠️ Restrição</button>
+    <button class="fchip ${STATE.filtroStatus==='interditada'?'active':''}" onclick="setFiltro('interditada')">⛔ Interditadas</button>
+    <button class="fchip ${STATE.filtroStatus==='pendente'?'active':''}" onclick="setFiltro('pendente')">⏳ Sem inspeção</button>
+  </div>
+  <div id="platGridWrap"></div>`;
+  drawRegenTabs();
+  document.getElementById('buscaPlat').value=STATE.busca;
+  drawPlatGrid();
+}
+function drawRegenTabs(){
+  document.getElementById('regenTabs').innerHTML = CONFIG.regeneradores.map(reg=>{
+    const rs=stats(STATE.plataformas.filter(p=>p.regen===reg.id));
+    const act=STATE.regenAtivo===reg.id;
+    return `<button class="regen-tab ${act?'active':''}" onclick="STATE.regenAtivo=${reg.id};drawRegenTabs();drawPlatGrid()">
+      <div class="rt">🏭 ${reg.nome}</div>
+      <div class="muted" style="font-size:11px">${rs.total} plataformas</div>
+      <div class="rmini">
+        <b class="mg">${rs.liberada}</b><b class="my">${rs.restrita}</b><b class="mr">${rs.interditada}</b>
+      </div>
+    </button>`;
+  }).join('');
+}
+function setFiltro(f){STATE.filtroStatus=f;document.querySelectorAll('.filterbar .fchip').forEach(b=>b.classList.remove('active'));event.target.classList.add('active');drawPlatGrid();}
+function drawPlatGrid(){
+  let lista=STATE.plataformas.filter(p=>p.regen===STATE.regenAtivo);
+  if(STATE.filtroStatus!=='todos') lista=lista.filter(p=>p.status===STATE.filtroStatus);
+  if(STATE.busca.trim()){const b=STATE.busca.trim().toUpperCase();lista=lista.filter(p=>p.cod.includes(b));}
+  const wrap=document.getElementById('platGridWrap');
+  if(!lista.length){wrap.innerHTML=`<div class="empty"><div class="eic">🔍</div>Nenhuma plataforma encontrada com esse filtro.</div>`;return;}
+  wrap.innerHTML=`<div class="plat-grid">${lista.map(p=>{
+    const st=STATUS_MAP[p.status];
+    const venc = p.proxInspecao && diasEntre(hoje(),p.proxInspecao)<0 && p.status!=='pendente';
+    return `<div class="plat-card ${st.key}" onclick="abrirFicha('${p.cod}')">
+      <div class="pcod">${p.cod}</div>
+      <div class="pstat"><span class="badge ${st.badge}">${st.ic} ${st.label}</span></div>
+      <div class="pdate">🕓 ${p.ultInspecao?fmtData(p.ultInspecao):'Nunca inspecionada'}</div>
+      ${venc?`<div class="pwarn">⚠️ Inspeção vencida</div>`:''}
+    </div>`;
+  }).join('')}</div>`;
+}
+</script>
+
+<script>
+/* ====================================================================
+   FICHA DA PLATAFORMA — modal com abas
+   ==================================================================== */
+function abrirFicha(cod){
+  const p=STATE.plataformas.find(x=>x.cod===cod);
+  if(!p)return;
+  STATE.platAtual=p;
+  STATE.modalTab='resumo';
+  drawModal();
+  document.getElementById('modalBg').classList.add('open');
+}
+function fecharModal(){document.getElementById('modalBg').classList.remove('open');STATE.platAtual=null;}
+function setModalTab(t){STATE.modalTab=t;drawModal();}
+
+function drawModal(){
+  const p=STATE.platAtual; if(!p)return;
+  const st=STATUS_MAP[p.status];
+  const box=document.getElementById('modalBox');
+  const podeInsp=temPerm('inspecionar');
+  const podeFoto=temPerm('fotos');
+
+  const tabs=[
+    {id:'resumo',nome:'Resumo',ic:'📋'},
+    {id:'checklist',nome:'Checklist',ic:'✓'},
+    {id:'fotos',nome:`Fotos (${p.fotos.length})`,ic:'📷'},
+    {id:'historico',nome:'Histórico',ic:'🕓'},
+    ...(modOn('qrcode')?[{id:'qr',nome:'QR Code',ic:'🔳'}]:[])
+  ];
+
+  box.innerHTML=`
+    <div class="modal-head">
+      <div>
+        <div class="mt"><span class="badge ${st.badge}" style="font-size:14px">${st.ic}</span> Plataforma ${p.cod}</div>
+        <div class="mc">${p.regenNome} • Ativo individual rastreável</div>
+      </div>
+      <button class="modal-x" onclick="fecharModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-tabs">
+        ${tabs.map(t=>`<button class="${STATE.modalTab===t.id?'active':''}" onclick="setModalTab('${t.id}')">${t.ic} ${t.nome}</button>`).join('')}
+      </div>
+      <div id="modalContent">${drawModalTab(p,podeInsp,podeFoto)}</div>
+    </div>`;
+  if(STATE.modalTab==='qr') setTimeout(()=>renderQR(p),50);
+}
+
+function drawModalTab(p,podeInsp,podeFoto){
+  const st=STATUS_MAP[p.status];
+  const venc = p.proxInspecao && diasEntre(hoje(),p.proxInspecao)<0 && p.status!=='pendente';
+
+  /* ---- RESUMO ---- */
+  if(STATE.modalTab==='resumo'){
+    return `
+    <div class="mtab active">
+      <div class="info-grid">
+        <div class="info-item"><div class="il">Código</div><div class="iv">${p.cod}</div></div>
+        <div class="info-item"><div class="il">Regenerador</div><div class="iv">${p.regenNome}</div></div>
+        <div class="info-item"><div class="il">Situação</div><div class="iv"><span class="badge ${st.badge}">${st.ic} ${st.label}</span></div></div>
+        <div class="info-item"><div class="il">Última inspeção</div><div class="iv">${fmtData(p.ultInspecao)}</div></div>
+        <div class="info-item"><div class="il">Responsável</div><div class="iv">${p.responsavel||'—'}</div></div>
+        <div class="info-item"><div class="il">Próxima inspeção</div><div class="iv" style="${venc?'color:var(--vermelho)':''}">${fmtData(p.proxInspecao)} ${venc?'⚠️':''}</div></div>
+      </div>
+
+      <div class="panel" style="background:var(--bg);margin-bottom:16px">
+        <div class="panel-head"><h4>Observações</h4></div>
+        ${podeInsp
+          ? `<textarea id="obsField" rows="3" style="width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:11px;color:var(--txt);outline:none;resize:vertical" placeholder="Anotações sobre a plataforma...">${p.obs||''}</textarea>`
+          : `<p style="color:var(--txt2);font-size:13.5px">${p.obs||'Sem observações.'}</p>`}
+      </div>
+
+      ${podeInsp?`
+      <div class="panel" style="background:var(--bg)">
+        <div class="panel-head"><h4>Alterar situação</h4><div class="sub">Registra na auditoria</div></div>
+        <div class="status-set">
+          <button class="status-btn ${p.status==='liberada'?'act-g':''}" onclick="setStatus('liberada')"><span class="sbi">✅</span>Liberada</button>
+          <button class="status-btn ${p.status==='restrita'?'act-y':''}" onclick="setStatus('restrita')"><span class="sbi">⚠️</span>Restrita</button>
+          <button class="status-btn ${p.status==='interditada'?'act-r':''}" onclick="setStatus('interditada')"><span class="sbi">⛔</span>Interditada</button>
+        </div>
+        <button class="btn-sm" style="width:100%;justify-content:center;margin-top:6px" onclick="salvarInspecao()">💾 Salvar inspeção completa</button>
+      </div>`:`<div class="scope-note">👁️ Seu perfil (${PERFIS[STATE.usuario.perfil].nome}) tem acesso somente de leitura nesta ficha.</div>`}
+    </div>`;
+  }
+
+  /* ---- CHECKLIST ---- */
+  if(STATE.modalTab==='checklist'){
+    const podeEditar=podeInsp;
+    return `<div class="mtab active">
+      <div class="scope-note">Marque cada item como Conforme, Não Conforme ou Não Aplicável. ${podeEditar?'As alterações entram no histórico ao salvar.':'(somente leitura)'}</div>
+      ${CONFIG.checklist.map(it=>{
+        const v=p.checklist[it.id];
+        return `<div class="chk-item">
+          <div class="cl"><span class="cic">${it.ic}</span>${it.nome}</div>
+          <div class="chk-opts">
+            <button class="chk-opt ${v==='conforme'?'sel-c':''}" ${podeEditar?`onclick="setChk('${it.id}','conforme')"`:'disabled'}>Conforme</button>
+            <button class="chk-opt ${v==='nao_conforme'?'sel-nc':''}" ${podeEditar?`onclick="setChk('${it.id}','nao_conforme')"`:'disabled'}>Não Conf.</button>
+            <button class="chk-opt ${v==='na'?'sel-na':''}" ${podeEditar?`onclick="setChk('${it.id}','na')"`:'disabled'}>N/A</button>
+          </div>
+        </div>`;
+      }).join('')}
+      ${podeEditar?`<button class="btn-sm" style="width:100%;justify-content:center;margin-top:8px" onclick="salvarInspecao()">💾 Salvar inspeção</button>`:''}
+    </div>`;
+  }
+
+  /* ---- FOTOS ---- */
+  if(STATE.modalTab==='fotos'){
+    return `<div class="mtab active">
+      ${podeFoto?`
+      <div class="upload-zone" onclick="document.getElementById('fotoInput').click()">
+        <div class="uic">📷</div>
+        <div style="font-weight:600">Toque para adicionar fotos</div>
+        <div class="muted" style="margin-top:4px">Câmera ou galeria • associadas automaticamente à plataforma ${p.cod}</div>
+      </div>
+      <input type="file" id="fotoInput" accept="image/*" multiple capture="environment" style="display:none" onchange="addFotos(event)">
+      `:`<div class="scope-note">👁️ Seu perfil não permite anexar fotos.</div>`}
+      ${p.fotos.length?`<div class="foto-gal">${p.fotos.map(f=>`
+        <div class="foto-thumb">
+          <img src="${f.src}" onclick="openLightbox('${f.src}')">
+          ${podeFoto?`<button class="fdel" onclick="delFoto('${f.id}')">🗑️</button>`:''}
+          <div class="fcap">${fmtData(f.data)} • ${f.autor.split(' ')[0]}</div>
+        </div>`).join('')}</div>`
+      :`<div class="empty"><div class="eic">📷</div>Nenhuma foto anexada ainda.</div>`}
+    </div>`;
+  }
+
+  /* ---- HISTÓRICO ---- */
+  if(STATE.modalTab==='historico'){
+    if(!p.historico.length) return `<div class="mtab active"><div class="empty"><div class="eic">🕓</div>Sem histórico de inspeções.</div></div>`;
+    const hist=[...p.historico].sort((a,b)=>new Date(b.data)-new Date(a.data));
+    return `<div class="mtab active"><div class="tl">${hist.map(h=>{
+      const k=STATUS_MAP[h.status]?STATUS_MAP[h.status].key:'';
+      return `<div class="tl-item ${k}">
+        <div class="tlh">${h.acao} ${h.status?`<span class="badge ${STATUS_MAP[h.status].badge}">${STATUS_MAP[h.status].label}</span>`:''}</div>
+        <div class="tlm">${fmtDataHora(h.data)} • ${h.usuario}</div>
+        <div class="tld">${h.detalhe}</div>
+      </div>`;
+    }).join('')}</div></div>`;
+  }
+
+  /* ---- QR CODE ---- */
+  if(STATE.modalTab==='qr'){
+    return `<div class="mtab active">
+      <div class="scope-note">Cada plataforma tem um QR Code exclusivo. Em campo, o operador escaneia e cai direto nesta ficha para inspecionar pelo celular.</div>
+      <div class="qr-wrap">
+        <div class="qr-box" id="qrBox"></div>
+        <div class="qr-info">
+          <p><b>Plataforma ${p.cod}</b></p>
+          <p>Link direto: <span style="color:var(--azul);word-break:break-all">${CONFIG.baseUrl}${p.cod}</span></p>
+          <p>Ao escanear: abre a ficha, permite preencher inspeção e anexar fotos pelo celular, atualizando o sistema.</p>
+          <button class="btn-sm" style="margin-top:8px" onclick="baixarQR('${p.cod}')">⬇️ Baixar QR Code (PNG)</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  return '';
+}
+</script>
+
+<script>
+/* ====================================================================
+   AÇÕES DA FICHA
+   ==================================================================== */
+function setStatus(novo){
+  const p=STATE.platAtual;
+  p.status=novo;
+  // re-renderiza só os botões de status no resumo
+  drawModal();
+}
+function setChk(item,val){
+  const p=STATE.platAtual;
+  p.checklist[item]= (p.checklist[item]===val)?null:val;
+  drawModal();
+}
+function salvarInspecao(){
+  const p=STATE.platAtual;
+  // captura observações se o campo existir
+  const obsEl=document.getElementById('obsField');
+  if(obsEl) p.obs=obsEl.value;
+
+  // deriva status sugerido do checklist se houver não conformidade
+  const temNC=Object.values(p.checklist).some(v=>v==='nao_conforme');
+  p.inspecionada=true;
+  p.ultInspecao=hoje();
+  p.proxInspecao=addDias(hoje(),CONFIG.prazoInspecaoDias);
+  p.responsavel=STATE.usuario.nome;
+
+  // registra no histórico da plataforma
+  const nc=Object.entries(p.checklist).filter(([k,v])=>v==='nao_conforme').map(([k])=>CONFIG.checklist.find(c=>c.id===k).nome);
+  p.historico.unshift({
+    data:hoje(), usuario:STATE.usuario.nome, acao:"Inspeção realizada", status:p.status,
+    detalhe: nc.length?`Não conformidades: ${nc.join(', ')}.`:"Todos os itens conformes."
+  });
+  // auditoria global
+  logAudit("Inspeção salva", `Plataforma ${p.cod}`, `Status: ${STATUS_MAP[p.status].label}${nc.length?' • NC: '+nc.join(', '):''}`);
+  toast(`Inspeção da ${p.cod} salva com sucesso!`,"ok");
+  drawModal();
+}
+
+/* ---- FOTOS ---- */
+function addFotos(ev){
+  const files=[...ev.target.files];
+  const p=STATE.platAtual;
+  let pend=files.length;
+  if(!pend)return;
+  files.forEach(file=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      // redimensiona para não estourar memória (canvas)
+      const img=new Image();
+      img.onload=()=>{
+        const max=900,sc=Math.min(1,max/Math.max(img.width,img.height));
+        const cv=document.createElement('canvas');
+        cv.width=img.width*sc;cv.height=img.height*sc;
+        cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+        p.fotos.push({id:uid(),src:cv.toDataURL('image/jpeg',0.75),data:hoje(),autor:STATE.usuario.nome});
+        pend--;
+        if(pend===0){
+          logAudit("Fotos anexadas",`Plataforma ${p.cod}`,`${files.length} foto(s) adicionada(s).`);
+          p.historico.unshift({data:hoje(),usuario:STATE.usuario.nome,acao:"Evidência fotográfica",status:null,detalhe:`${files.length} foto(s) anexada(s).`});
+          toast(`${files.length} foto(s) anexada(s)!`,"ok");
+          drawModal();
+        }
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+function delFoto(id){
+  const p=STATE.platAtual;
+  p.fotos=p.fotos.filter(f=>f.id!==id);
+  logAudit("Foto removida",`Plataforma ${p.cod}`,"");
+  drawModal();
+}
+function openLightbox(src){document.getElementById('lightboxImg').src=src;document.getElementById('lightbox').classList.add('open');}
+function closeLightbox(){document.getElementById('lightbox').classList.remove('open');}
+
+/* ---- QR CODE ---- */
+function renderQR(p){
+  const box=document.getElementById('qrBox');
+  if(!box)return;
+  box.innerHTML='';
+  new QRCode(box,{text:CONFIG.baseUrl+p.cod,width:150,height:150,colorDark:"#0d1117",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.H});
+}
+function baixarQR(cod){
+  const canvas=document.querySelector('#qrBox canvas');
+  if(!canvas){toast("QR ainda carregando, tente de novo.","err");return;}
+  // monta etiqueta com código + QR
+  const out=document.createElement('canvas');
+  out.width=300;out.height=360;
+  const ctx=out.getContext('2d');
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,300,360);
+  ctx.fillStyle='#0d1117';ctx.font='bold 26px sans-serif';ctx.textAlign='center';
+  ctx.fillText('Plataforma '+cod,150,40);
+  ctx.drawImage(canvas,75,60,150,150);
+  ctx.font='13px sans-serif';ctx.fillStyle='#555';
+  ctx.fillText('SGIA — Integridade de Andaimes',150,240);
+  ctx.fillText('Escaneie para inspecionar',150,262);
+  try{
+    const a=document.createElement('a');
+    a.href=out.toDataURL('image/png');
+    a.download='QR_'+cod+'.png';
+    document.body.appendChild(a);a.click();a.remove();
+    toast('QR Code da '+cod+' baixado!','ok');
+  }catch(e){toast('Não foi possível baixar.','err');}
+}
+</script>
+
+<script>
+/* ====================================================================
+   PÁGINA: MAPA VISUAL (foto de drone)
+   ==================================================================== */
+function renderMapa(){
+  const c=document.getElementById('content');
+  const podeEditar=temPerm('mapa_edit');
+  c.innerHTML=`
+  <div class="page-head">
+    <h3>🗺️ Mapa Visual do Andaime</h3>
+    <p>Posicione cada plataforma sobre a imagem aérea obtida por drone</p>
+  </div>
+  <div class="filterbar">
+    ${podeEditar?`<button class="btn-sm sec" onclick="document.getElementById('mapaInput').click()">📤 Carregar foto de drone</button>
+    <input type="file" id="mapaInput" accept="image/*" style="display:none" onchange="carregarMapa(event)">
+    <button class="btn-sm ${STATE.pinMode?'':'sec'}" id="pinBtn" onclick="togglePin()">${STATE.pinMode?'📍 Clique no mapa para posicionar':'📍 Posicionar plataformas'}</button>`:''}
+    <select id="mapaRegen" onchange="drawMapa()" style="margin-left:auto">
+      ${CONFIG.regeneradores.map(r=>`<option value="${r.id}">${r.nome}</option>`).join('')}
+    </select>
+  </div>
+  <div class="mapa-wrap" id="mapaWrap"></div>
+  ${STATE.pinMode?`<div class="scope-note" style="margin-top:12px">Selecione a plataforma na lista e clique no ponto correspondente da imagem. <button class="btn-sm sec" style="margin-left:8px" onclick="STATE.pinSelCod=null;drawPinPicker()">limpar seleção</button></div><div id="pinPicker"></div>`:''}`;
+  drawMapa();
+  if(STATE.pinMode) drawPinPicker();
+}
+function carregarMapa(ev){
+  const f=ev.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=e=>{STATE.mapaImg=e.target.result;logAudit("Mapa atualizado","Mapa Visual","Nova foto de drone carregada.");toast("Foto de drone carregada!","ok");drawMapa();};
+  r.readAsDataURL(f);
+}
+function togglePin(){STATE.pinMode=!STATE.pinMode;renderMapa();}
+let _pinSel=null;
+function drawPinPicker(){
+  const regId=+document.getElementById('mapaRegen').value;
+  const lista=STATE.plataformas.filter(p=>p.regen===regId);
+  const box=document.getElementById('pinPicker');if(!box)return;
+  box.innerHTML=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${lista.map(p=>`
+    <button class="fchip ${_pinSel===p.cod?'active':''}" onclick="_pinSel='${p.cod}';drawPinPicker()">${p.cod}${p.posMapa?' 📍':''}</button>`).join('')}</div>`;
+}
+function drawMapa(){
+  const wrap=document.getElementById('mapaWrap');if(!wrap)return;
+  const regId=+(document.getElementById('mapaRegen')?.value||STATE.regenAtivo);
+  if(!STATE.mapaImg){
+    wrap.innerHTML=`<div class="mapa-empty"><div class="mic">🛰️</div>
+      <div style="font-weight:600;margin-bottom:6px">Nenhuma imagem de drone carregada</div>
+      <p class="muted" style="max-width:380px;margin:0 auto">Carregue uma foto aérea do equipamento. Depois posicione cada plataforma sobre a imagem com sua cor de status. Ao clicar num ponto, a ficha abre.</p></div>`;
+    return;
+  }
+  const lista=STATE.plataformas.filter(p=>p.regen===regId && p.posMapa);
+  wrap.innerHTML=`<img id="mapaImg" src="${STATE.mapaImg}" onclick="mapaClick(event)">
+    ${lista.map(p=>`<div class="mapa-pin ${STATUS_MAP[p.status].key}" style="left:${p.posMapa.x}%;top:${p.posMapa.y}%" onclick="event.stopPropagation();abrirFicha('${p.cod}')" title="${p.cod}">${p.cod}</div>`).join('')}`;
+}
+function mapaClick(ev){
+  if(!STATE.pinMode || !_pinSel)return;
+  const img=ev.target;const rect=img.getBoundingClientRect();
+  const x=((ev.clientX-rect.left)/rect.width*100).toFixed(1);
+  const y=((ev.clientY-rect.top)/rect.height*100).toFixed(1);
+  const p=STATE.plataformas.find(x=>x.cod===_pinSel);
+  p.posMapa={x:+x,y:+y};
+  logAudit("Plataforma posicionada no mapa",`Plataforma ${p.cod}`,`Posição ${x}%, ${y}%`);
+  toast(`${p.cod} posicionada no mapa!`,"ok");
+  drawMapa();drawPinPicker();
+}
+
+/* ====================================================================
+   PÁGINA: RELATÓRIOS (geração PDF via jsPDF)
+   ==================================================================== */
+function renderRelatorios(){
+  const c=document.getElementById('content');
+  c.innerHTML=`
+  <div class="page-head">
+    <h3>📄 Relatórios</h3>
+    <p>Gere e exporte relatórios em PDF</p>
+  </div>
+  <div class="rep-grid">
+    <div class="rep-card"><div class="ric">📅</div><h4>Relatório Semanal</h4><p>Resumo consolidado da semana com status de todas as plataformas.</p><button class="btn-sm" onclick="gerarPDF('semanal')">Gerar PDF</button></div>
+    <div class="rep-card"><div class="ric">🏭</div><h4>Por Regenerador</h4><p>Situação detalhada das plataformas de um equipamento específico.</p>
+      <select id="repRegen" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--txt);margin-bottom:10px">${CONFIG.regeneradores.map(r=>`<option value="${r.id}">${r.nome}</option>`).join('')}</select>
+      <button class="btn-sm" onclick="gerarPDF('regen')">Gerar PDF</button></div>
+    <div class="rep-card"><div class="ric">⛔</div><h4>Não Conformidades</h4><p>Lista de plataformas restritas e interditadas com motivos.</p><button class="btn-sm" onclick="gerarPDF('nc')">Gerar PDF</button></div>
+    <div class="rep-card"><div class="ric">📋</div><h4>Por Plataforma</h4><p>Ficha completa de uma plataforma com checklist e histórico.</p>
+      <input id="repPlat" placeholder="Código (ex: 1A)" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--txt);margin-bottom:10px;text-transform:uppercase">
+      <button class="btn-sm" onclick="gerarPDF('plat')">Gerar PDF</button></div>
+    <div class="rep-card"><div class="ric">📊</div><h4>Geral Completo</h4><p>Inventário de todos os ativos com indicadores de disponibilidade.</p><button class="btn-sm" onclick="gerarPDF('geral')">Gerar PDF</button></div>
+  </div>
+  <div class="scope-note" style="margin-top:16px">📷 Relatórios com fotos e envio automático por e-mail entram na fase com backend (preparado na arquitetura).</div>`;
+}
+
+function gerarPDF(tipo){
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF();
+  const W=210;let y=20;
+  const s=stats();
+  // cabeçalho
+  doc.setFillColor(47,129,247);doc.rect(0,0,W,28,'F');
+  doc.setTextColor(255);doc.setFontSize(16);doc.setFont(undefined,'bold');
+  doc.text('SGIA — Integridade de Andaimes',14,13);
+  doc.setFontSize(9);doc.setFont(undefined,'normal');
+  doc.text(CONFIG.empresa+'  |  '+CONFIG.cliente,14,21);
+  y=38;
+  doc.setTextColor(33);
+
+  const titulo=(t)=>{doc.setFontSize(14);doc.setFont(undefined,'bold');doc.text(t,14,y);y+=4;doc.setDrawColor(220);doc.line(14,y,W-14,y);y+=7;doc.setFont(undefined,'normal');doc.setFontSize(10);};
+  const linha=(t,b)=>{if(y>275){doc.addPage();y=20;}doc.setFont(undefined,b?'bold':'normal');doc.text(t,14,y);y+=6;};
+
+  const tabela=(lista)=>{
+    doc.setFontSize(8.5);
+    if(y>265){doc.addPage();y=20;}
+    doc.setFont(undefined,'bold');doc.setFillColor(240);doc.rect(14,y-4,W-28,7,'F');
+    doc.text('Cód',16,y);doc.text('Status',36,y);doc.text('Últ. inspeção',72,y);doc.text('Responsável',110,y);doc.text('Próxima',165,y);y+=6;
+    doc.setFont(undefined,'normal');
+    lista.forEach(p=>{
+      if(y>282){doc.addPage();y=20;}
+      const cor=p.status==='liberada'?[63,185,80]:p.status==='restrita'?[210,153,34]:p.status==='interditada'?[248,81,73]:[120,120,120];
+      doc.setTextColor(...cor);doc.text('●',16,y);doc.setTextColor(33);
+      doc.text(p.cod,21,y);
+      doc.text(STATUS_MAP[p.status].label,36,y);
+      doc.text(fmtData(p.ultInspecao),72,y);
+      doc.text((p.responsavel||'—').slice(0,22),110,y);
+      doc.text(fmtData(p.proxInspecao),165,y);
+      y+=5.5;
+    });
+  };
+
+  let nome='relatorio';
+  if(tipo==='semanal'||tipo==='geral'){
+    titulo(tipo==='semanal'?'Relatório Semanal':'Relatório Geral Completo');
+    linha(`Data de emissão: ${fmtDataHora(hoje())}`);
+    linha(`Emitido por: ${STATE.usuario.nome} (${PERFIS[STATE.usuario.perfil].nome})`);y+=2;
+    linha('RESUMO',true);
+    linha(`Total de plataformas: ${s.total}`);
+    linha(`Liberadas: ${s.liberada}  |  Restritas: ${s.restrita}  |  Interditadas: ${s.interditada}  |  Sem inspeção: ${s.pendente}`);
+    linha(`Disponibilidade: ${s.pctDisp}%   |   Inspeções vencidas: ${s.vencidas}`);y+=3;
+    linha('PLATAFORMAS',true);
+    tabela(STATE.plataformas);
+    nome=tipo;
+  }
+  else if(tipo==='regen'){
+    const rid=+document.getElementById('repRegen').value;
+    const reg=CONFIG.regeneradores.find(r=>r.id===rid);
+    const lista=STATE.plataformas.filter(p=>p.regen===rid);
+    const rs=stats(lista);
+    titulo('Relatório — '+reg.nome);
+    linha(`Emissão: ${fmtDataHora(hoje())} por ${STATE.usuario.nome}`);y+=2;
+    linha(`Plataformas: ${rs.total}  |  Liberadas: ${rs.liberada}  |  Restritas: ${rs.restrita}  |  Interditadas: ${rs.interditada}`,true);
+    linha(`Disponibilidade: ${rs.pctDisp}%`);y+=3;
+    tabela(lista);
+    nome='regenerador_'+rid;
+  }
+  else if(tipo==='nc'){
+    const lista=STATE.plataformas.filter(p=>p.status==='restrita'||p.status==='interditada');
+    titulo('Relatório de Não Conformidades');
+    linha(`Emissão: ${fmtDataHora(hoje())}`);
+    linha(`${lista.length} plataforma(s) com restrição ou interdição.`,true);y+=3;
+    lista.forEach(p=>{
+      if(y>270){doc.addPage();y=20;}
+      const nc=Object.entries(p.checklist).filter(([k,v])=>v==='nao_conforme').map(([k])=>CONFIG.checklist.find(c=>c.id===k).nome);
+      doc.setFont(undefined,'bold');doc.text(`${p.cod} — ${STATUS_MAP[p.status].label} (${p.regenNome})`,14,y);y+=5;
+      doc.setFont(undefined,'normal');doc.setFontSize(9);
+      doc.text(`Itens não conformes: ${nc.length?nc.join(', '):'—'}`,18,y);y+=5;
+      if(p.obs){doc.text(`Obs: ${p.obs}`.slice(0,95),18,y);y+=5;}
+      doc.setFontSize(10);y+=2;
+    });
+    nome='nao_conformidades';
+  }
+  else if(tipo==='plat'){
+    const cod=document.getElementById('repPlat').value.trim().toUpperCase();
+    const p=STATE.plataformas.find(x=>x.cod===cod);
+    if(!p){toast('Plataforma '+cod+' não encontrada.','err');return;}
+    titulo('Ficha da Plataforma '+p.cod);
+    linha(`Regenerador: ${p.regenNome}`);
+    linha(`Situação: ${STATUS_MAP[p.status].label}`,true);
+    linha(`Última inspeção: ${fmtData(p.ultInspecao)}  |  Próxima: ${fmtData(p.proxInspecao)}`);
+    linha(`Responsável: ${p.responsavel||'—'}`);y+=2;
+    linha('CHECKLIST',true);
+    CONFIG.checklist.forEach(it=>{const v=p.checklist[it.id];linha(`• ${it.nome}: ${v==='conforme'?'Conforme':v==='nao_conforme'?'NÃO CONFORME':v==='na'?'N/A':'—'}`);});
+    y+=2;linha('OBSERVAÇÕES',true);linha(p.obs||'—');
+    y+=2;linha(`Fotos anexadas: ${p.fotos.length}`,true);
+    y+=2;linha('HISTÓRICO',true);
+    [...p.historico].sort((a,b)=>new Date(b.data)-new Date(a.data)).forEach(h=>linha(`${fmtData(h.data)} — ${h.acao} (${h.usuario})`));
+    nome='plataforma_'+cod;
+  }
+  // rodapé
+  const pgs=doc.internal.getNumberOfPages();
+  for(let i=1;i<=pgs;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(150);doc.text(`SGIA • Gerado em ${fmtDataHora(hoje())} • Página ${i}/${pgs}`,14,290);}
+  doc.save('SGIA_'+nome+'.pdf');
+  logAudit("Relatório gerado",nome,`PDF emitido por ${STATE.usuario.nome}`);
+  toast('Relatório PDF gerado!','ok');
+}
+
+/* ====================================================================
+   PÁGINA: AUDITORIA / HISTÓRICO GLOBAL
+   ==================================================================== */
+function renderHistorico(){
+  const c=document.getElementById('content');
+  c.innerHTML=`
+  <div class="page-head"><h3>🕓 Histórico e Auditoria</h3><p>Rastreabilidade completa — nenhuma informação é perdida</p></div>
+  <div class="panel">
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Data / Hora</th><th>Usuário</th><th>Perfil</th><th>Ação</th><th>Alvo</th><th>Detalhe</th></tr></thead>
+      <tbody>${STATE.auditoria.map(a=>`<tr>
+        <td style="white-space:nowrap">${fmtDataHora(a.data)}</td>
+        <td>${a.usuario}</td><td><span class="muted">${a.perfil}</span></td>
+        <td style="font-weight:600">${a.acao}</td><td>${a.alvo}</td>
+        <td class="muted">${a.detalhe||'—'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
+
+/* ====================================================================
+   PÁGINA: USUÁRIOS
+   ==================================================================== */
+function renderUsuarios(){
+  const c=document.getElementById('content');
+  const podeGerir=temPerm('usuarios');
+  c.innerHTML=`
+  <div class="page-head"><h3>👥 Controle de Usuários</h3><p>Perfis e permissões de acesso ao sistema</p></div>
+  ${podeGerir?`<button class="btn-sm" style="margin-bottom:16px" onclick="modalNovoUsuario()">➕ Novo usuário</button>`:''}
+  <div class="panel">
+    ${USUARIOS.map(u=>{const p=PERFIS[u.perfil];return `<div class="user-row">
+      <div class="uav" style="background:${p.cor}">${iniciais(u.nome)}</div>
+      <div class="uinfo"><div class="un">${u.nome}</div><div class="ue">@${u.user} • ${u.email}</div>
+        <div style="margin-top:5px">${p.perms.map(pm=>`<span class="perm-tag">${PERM_LABELS[pm]}</span>`).join('')}</div></div>
+      <span class="badge c" style="background:${p.cor}22;color:${p.cor};border-color:${p.cor}55">${p.nome}</span>
+    </div>`;}).join('')}
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h4>Matriz de permissões por perfil</h4></div>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Perfil</th>${Object.values(PERM_LABELS).map(l=>`<th style="text-align:center">${l}</th>`).join('')}</tr></thead>
+      <tbody>${Object.entries(PERFIS).map(([k,p])=>`<tr><td style="font-weight:700;color:${p.cor}">${p.nome}</td>
+        ${Object.keys(PERM_LABELS).map(pm=>`<td style="text-align:center">${p.perms.includes(pm)?'<span style="color:var(--verde)">✓</span>':'<span style="color:var(--txt3)">—</span>'}</td>`).join('')}
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
+function modalNovoUsuario(){
+  const box=document.getElementById('modalBox');
+  box.innerHTML=`<div class="modal-head"><div class="mt">➕ Novo usuário</div><button class="modal-x" onclick="fecharModal()">✕</button></div>
+  <div class="modal-body">
+    <div class="field"><label>Nome completo</label><input id="nuNome" placeholder="Nome do usuário"></div>
+    <div class="field"><label>Usuário (login)</label><input id="nuUser" placeholder="login.usuario"></div>
+    <div class="field"><label>E-mail</label><input id="nuEmail" placeholder="email@empresa.com"></div>
+    <div class="field"><label>Perfil de acesso</label><select id="nuPerfil">${Object.entries(PERFIS).map(([k,p])=>`<option value="${k}">${p.nome}</option>`).join('')}</select></div>
+    <button class="btn-sm" style="width:100%;justify-content:center" onclick="salvarUsuario()">💾 Cadastrar usuário</button>
+  </div>`;
+  document.getElementById('modalBg').classList.add('open');
+}
+function salvarUsuario(){
+  const nome=document.getElementById('nuNome').value.trim();
+  const user=document.getElementById('nuUser').value.trim().toLowerCase();
+  const email=document.getElementById('nuEmail').value.trim();
+  const perfil=document.getElementById('nuPerfil').value;
+  if(!nome||!user){toast('Preencha nome e usuário.','err');return;}
+  if(USUARIOS.find(u=>u.user===user)){toast('Esse login já existe.','err');return;}
+  USUARIOS.push({id:Date.now(),user,nome,perfil,email});
+  logAudit("Usuário criado",nome,`Perfil: ${PERFIS[perfil].nome}`);
+  toast('Usuário cadastrado!','ok');
+  fecharModal();renderChips();renderUsuarios();
+}
+
+/* ====================================================================
+   PÁGINA: CONFIGURAÇÕES (ADMIN) — liga/desliga módulos
+   ==================================================================== */
+function renderAdmin(){
+  const c=document.getElementById('content');
+  c.innerHTML=`
+  <div class="page-head"><h3>⚙️ Configurações do Sistema</h3><p>Ative, desative e personalize módulos — visível apenas para Administrador</p></div>
+
+  <div class="panel">
+    <div class="panel-head"><h4>Módulos do sistema</h4><div class="sub">Desligar um módulo o remove do menu de todos os usuários</div></div>
+    ${CONFIG.modulos.map(m=>`<div class="mod-row">
+      <div class="minfo"><div class="mn">${m.ic} ${m.nome} ${m.fixo?'<span class="perm-tag">essencial</span>':''}</div><div class="md">${m.desc}</div></div>
+      <label class="switch"><input type="checkbox" ${m.on?'checked':''} ${m.fixo?'disabled':''} onchange="toggleModulo('${m.id}',this.checked)"><span class="slider"></span></label>
+    </div>`).join('')}
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h4>Parâmetros gerais</h4></div>
+    <div class="row-2">
+      <div class="field"><label>Nome da empresa</label><input id="cfgEmpresa" value="${CONFIG.empresa}"></div>
+      <div class="field"><label>Cliente</label><input id="cfgCliente" value="${CONFIG.cliente}"></div>
+      <div class="field"><label>Prazo entre inspeções (dias)</label><input id="cfgPrazo" type="number" value="${CONFIG.prazoInspecaoDias}"></div>
+      <div class="field"><label>Plataformas por regenerador</label><input id="cfgPlat" type="number" value="${CONFIG.plataformasPorRegen}" disabled></div>
+    </div>
+    <button class="btn-sm" onclick="salvarConfig()">💾 Salvar parâmetros</button>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h4>Itens do checklist de inspeção</h4><div class="sub">Configurável — base para todas as plataformas</div></div>
+    ${CONFIG.checklist.map(it=>`<div class="mod-row"><div class="minfo"><div class="mn">${it.ic} ${it.nome}</div></div></div>`).join('')}
+    <div class="scope-note" style="margin-top:8px">Adicionar/remover itens, editar perfis e adicionar novos regeneradores são ajustes de configuração que ficam centralizados no bloco CONFIG do sistema.</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h4>🚀 Funcionalidades futuras (arquitetura preparada)</h4></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">
+      ${['Integração Microsoft Forms','Integração Excel','Power BI','Power Automate','E-mail automático de relatórios','Alertas de vencimento','App Android nativo','Modo offline + sincronização','Dashboard tempo real','Manutenção preventiva'].map(f=>`<div style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:11px 13px;font-size:12.5px;color:var(--txt2)">⏳ ${f}</div>`).join('')}
+    </div>
+  </div>`;
+}
+function toggleModulo(id,on){
+  const m=CONFIG.modulos.find(x=>x.id===id);m.on=on;
+  logAudit(on?"Módulo ativado":"Módulo desativado",m.nome,"");
+  toast(`${m.nome} ${on?'ativado':'desativado'}.`,"ok");
+  buildNav();
+}
+function salvarConfig(){
+  CONFIG.empresa=document.getElementById('cfgEmpresa').value;
+  CONFIG.cliente=document.getElementById('cfgCliente').value;
+  CONFIG.prazoInspecaoDias=+document.getElementById('cfgPrazo').value||7;
+  logAudit("Parâmetros alterados","Configurações","");
+  toast("Parâmetros salvos!","ok");
+}
+
+/* ====================================================================
+   PÁGINA: PERFIL DO USUÁRIO
+   ==================================================================== */
+function renderPerfil(){
+  const c=document.getElementById('content');const u=STATE.usuario;const p=PERFIS[u.perfil];
+  c.innerHTML=`
+  <div class="page-head"><h3>👤 Meu Perfil</h3></div>
+  <div class="panel" style="text-align:center;padding:30px">
+    <div class="uav" style="background:${p.cor};width:70px;height:70px;font-size:26px;margin:0 auto 14px">${iniciais(u.nome)}</div>
+    <div style="font-size:20px;font-weight:800">${u.nome}</div>
+    <div class="muted">@${u.user} • ${u.email}</div>
+    <div style="margin-top:10px"><span class="badge c" style="background:${p.cor}22;color:${p.cor};border-color:${p.cor}55">${p.nome}</span></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h4>Minhas permissões</h4></div>
+    <div>${p.perms.map(pm=>`<span class="perm-tag" style="font-size:12px;padding:5px 11px">✓ ${PERM_LABELS[pm]}</span>`).join(' ')}</div>
+  </div>
+  <button class="btn-sm danger" style="width:100%;justify-content:center" onclick="logout()">🚪 Sair do sistema</button>`;
+}
+
+/* ====================================================================
+   TOAST + INIT
+   ==================================================================== */
+let _toastT;
+function toast(msg,tipo){
+  const t=document.getElementById('toast');
+  t.textContent=(tipo==='ok'?'✅ ':tipo==='err'?'⛔ ':'')+msg;
+  t.className='show '+(tipo||'');
+  clearTimeout(_toastT);_toastT=setTimeout(()=>t.className='',2800);
+}
+document.getElementById('modalBg').addEventListener('click',e=>{if(e.target.id==='modalBg')fecharModal();});
+document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+
+// inicializa tela de login
+renderChips();
+</script>
+</body>
+</html>

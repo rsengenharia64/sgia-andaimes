@@ -362,6 +362,17 @@ input,select,textarea{font-family:inherit;font-size:15px}
 <!-- ================= LOGIN ================= -->
 <div id="login">
   <div class="login-card">
+    <div class="cbsi-brand" style="display:flex;justify-content:center;margin-bottom:20px">
+      <svg viewBox="0 0 300 120" xmlns="http://www.w3.org/2000/svg" style="height:64px;width:auto;display:block" role="img" aria-label="CBSI - Soluções em Serviços">
+        <defs><linearGradient id="cbsiBgA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a4d72"/><stop offset="1" stop-color="#16304b"/></linearGradient></defs>
+        <rect x="0" y="0" width="300" height="120" rx="14" fill="url(#cbsiBgA)"/>
+        <polygon points="60,16 104,60 60,104 16,60" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linejoin="round"/>
+        <path d="M84,49 A26,26 0 0 0 34,60" fill="none" stroke="#0d1219" stroke-width="9" stroke-linecap="round"/>
+        <path d="M34,60 A26,26 0 0 0 84,71" fill="none" stroke="#e8632a" stroke-width="9" stroke-linecap="round"/>
+        <text x="124" y="69" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#ffffff" letter-spacing="1">CBSI</text>
+        <text x="126" y="90" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="600" fill="#dbe4ee" letter-spacing="1.8">SOLUÇÕES EM SERVIÇOS</text>
+      </svg>
+    </div>
     <div class="login-logo">
       <div class="ico">🏗️</div>
       <h1>SGIA</h1>
@@ -387,7 +398,17 @@ input,select,textarea{font-family:inherit;font-size:15px}
 <!-- ================= APP ================= -->
 <div id="app">
   <div class="topbar">
-    <div class="logo-mini">🏗️</div>
+    <div class="logo-mini" style="width:auto;height:38px;background:none;border-radius:0;flex-shrink:0">
+      <svg viewBox="0 0 300 120" xmlns="http://www.w3.org/2000/svg" style="height:38px;width:auto;display:block" role="img" aria-label="CBSI - Soluções em Serviços">
+        <defs><linearGradient id="cbsiBgB" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a4d72"/><stop offset="1" stop-color="#16304b"/></linearGradient></defs>
+        <rect x="0" y="0" width="300" height="120" rx="14" fill="url(#cbsiBgB)"/>
+        <polygon points="60,16 104,60 60,104 16,60" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linejoin="round"/>
+        <path d="M84,49 A26,26 0 0 0 34,60" fill="none" stroke="#0d1219" stroke-width="9" stroke-linecap="round"/>
+        <path d="M34,60 A26,26 0 0 0 84,71" fill="none" stroke="#e8632a" stroke-width="9" stroke-linecap="round"/>
+        <text x="124" y="69" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#ffffff" letter-spacing="1">CBSI</text>
+        <text x="126" y="90" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="600" fill="#dbe4ee" letter-spacing="1.8">SOLUÇÕES EM SERVIÇOS</text>
+      </svg>
+    </div>
     <div class="titlewrap">
       <h2>SGIA — Integridade de Andaimes</h2>
       <span id="topSub">Regeneradores 1 a 4</span>
@@ -493,7 +514,7 @@ const PERM_LABELS = {ver:"Visualizar",inspecionar:"Inspecionar",fotos:"Anexar fo
 
 /* ===== USUÁRIOS DE DEMONSTRAÇÃO ===== */
 let USUARIOS = [
-  {id:1, user:"admin",      nome:"Carlos Andrade",   perfil:"admin",        email:"carlos@empresa.com"},
+  {id:1, user:"admin",      nome:"Webster Neiva",    perfil:"admin",        email:"webster.neiva@cbsi.com.br"},
   {id:2, user:"coord",      nome:"Marina Lopes",     perfil:"coordenador",  email:"marina@empresa.com"},
   {id:3, user:"super",      nome:"Roberto Dias",     perfil:"supervisor",   email:"roberto@empresa.com"},
   {id:4, user:"encar",      nome:"José Ferreira",    perfil:"encarregado",  email:"jose@empresa.com"},
@@ -562,7 +583,7 @@ function posInicialMapa(regId, idx){
    de demonstração: histórico, checklist, datas e algumas fotos. */
 function gerarPlataformas(){
   const arr=[];
-  const responsaveis=["Roberto Dias","José Ferreira","Marina Lopes","Carlos Andrade"];
+  const responsaveis=["Roberto Dias","José Ferreira","Marina Lopes","Webster Neiva"];
   CONFIG.regeneradores.forEach(reg=>{
     for(let i=0;i<CONFIG.plataformasPorRegen;i++){
       const cod = reg.id + LETRAS[i];
@@ -632,7 +653,7 @@ function gerarOcorrencias(){
     {cat:"observacao",    local:"Regenerador 2 - Base", desc:"Boa prática: equipe organizou cabos e mangueiras evitando tropeços.", acao:"Reconhecimento positivo em reunião de segurança.", sit:"encerrada"},
     {cat:"cond_insegura", local:"Regenerador 1 - Plataforma 1M", desc:"Iluminação insuficiente em área interna de inspeção.", acao:"Solicitada instalação de iluminação provisória.", sit:"aberta"}
   ];
-  const resps=["Roberto Dias","José Ferreira","Marina Lopes","Carlos Andrade"];
+  const resps=["Roberto Dias","José Ferreira","Marina Lopes","Webster Neiva"];
   return base.map((o,i)=>({
     id:uid(),
     data: addDias(hoje(), -(i*2+1)),

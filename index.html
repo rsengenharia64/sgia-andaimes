@@ -250,8 +250,8 @@ input,select,textarea{font-family:inherit;font-size:15px}
 .qr-info p{font-size:13px;color:var(--txt2);line-height:1.5;margin-bottom:6px}
 
 /* mapa */
-.mapa-wrap{position:relative;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;min-height:680px}
-#mapaImg{width:100%;height:100%;min-height:680px;object-fit:cover;display:block;position:absolute;inset:0}
+.mapa-wrap{position:relative;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+#mapaImg{width:100%;height:auto;object-fit:contain;display:block}
 .mapa-pin-layer{position:absolute;inset:0;z-index:2}
 .mapa-empty{padding:50px 20px;text-align:center;color:var(--txt2)}
 .mapa-empty .mic{font-size:44px;margin-bottom:12px;opacity:.5}
@@ -1451,7 +1451,7 @@ function drawMapa(){
       <p class="muted" style="max-width:380px;margin:0 auto">Use "Trocar imagem" para carregar a foto aérea deste mapa.</p></div>`;
     return;
   }
-  wrap.style.minHeight='680px';
+  wrap.style.minHeight='';
   let lista=platsAtivas();
   if(STATE.mapaRegFiltro && STATE.mapaRegFiltro!=='todos') lista=lista.filter(p=>p.regen===+STATE.mapaRegFiltro);
   lista=lista.filter(p=>posDe(p));

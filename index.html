@@ -599,8 +599,10 @@ function gerarPlataformas(){
         checklist: chk,
         fotos: [],
         historico: [],
-        // posição em cada mapa: {carcaca:{x,y}, camara:{x,y}} — pré-calculado abaixo
-        posMapa: posInicialMapa(reg.id, i)
+        // posição em cada mapa. Por padrão só a CARCAÇA recebe posição.
+        // A CÂMARA DE COMBUSTÃO começa vazia: as plataformas são marcadas
+        // individualmente pelo usuário para essa região específica.
+        posMapa: { carcaca: posInicialMapa(reg.id, i).carcaca }
       };
 
       // monta histórico inicial
@@ -1000,7 +1002,7 @@ function salvarNovaPlataforma(){
     responsavel: inspecionada?STATE.usuario.nome:null,
     obs:"", checklist:chk, fotos:[],
     historico:[{data:hoje(),usuario:STATE.usuario.nome,acao:"Plataforma criada",status,detalhe:`Plataforma adicionada por ${STATE.usuario.nome}.`}],
-    posMapa: posInicialMapa(rid, idx)
+    posMapa: { carcaca: posInicialMapa(rid, idx).carcaca }
   };
   STATE.plataformas.push(nova);
   logAudit("Plataforma criada",`Plataforma ${cod}`,`${reg.nome} • ${STATUS_MAP[status].label} • por ${STATE.usuario.nome}`);
@@ -1324,11 +1326,20 @@ function renderMapa(){
     <button class="fchip ${STATE.dragMode==='off'?'active':''}" onclick="setDragMode('off')">🔒 Travado</button>
     <button class="fchip ${STATE.dragMode==='unit'?'active':''}" onclick="setDragMode('unit')">📍 Mover individual</button>
     <button class="fchip ${STATE.dragMode==='grupo'?'active':''}" onclick="setDragMode('grupo')">🧩 Mover regenerador inteiro</button>
+    <button class="fchip ${STATE.dragMode==='remover'?'active':''}" onclick="setDragMode('remover')">➖ Remover do mapa</button>
     ${STATE.dragMode!=='off'?`<button class="btn-sm sec" onclick="resetPosicoes()">↺ Restaurar posições</button>`:''}
+  </div>
+  <div class="filterbar" style="margin-top:-4px">
+    <span class="muted" style="font-size:12.5px;align-self:center">Marcar plataforma neste mapa:</span>
+    ${(()=>{const fora=platsForaDoMapa();return fora.length
+      ? `<select id="mapaAddSel" class="fchip" style="padding:6px 10px">${optsForaDoMapa()}</select>
+         <button class="btn-sm" onclick="marcarNoMapa()">📍 Marcar aqui</button>`
+      : `<span class="muted" style="font-size:12.5px;align-self:center">Todas as plataformas já estão marcadas em <b>${mapaInfo.nome}</b>.</span>`;})()}
   </div>`:''}
 
   ${STATE.dragMode==='grupo'&&podeEditar?`<div class="scope-note" style="margin-bottom:12px">🧩 <b>Mover regenerador inteiro:</b> arraste qualquer indicador e toda a coluna daquele regenerador se move junta, mantendo o alinhamento.</div>`:''}
   ${STATE.dragMode==='unit'&&podeEditar?`<div class="scope-note" style="margin-bottom:12px">📍 <b>Mover individual:</b> arraste cada indicador para a posição exata. Toque/clique sem arrastar abre a ficha.</div>`:''}
+  ${STATE.dragMode==='remover'&&podeEditar?`<div class="scope-note" style="margin-bottom:12px">➖ <b>Remover do mapa:</b> toque/clique em um indicador para retirá-lo de <b>${mapaInfo.nome}</b>. A plataforma e seu histórico continuam no sistema — apenas a marcação neste mapa é removida.</div>`:''}
 
   <div class="mapa-wrap" id="mapaWrap"></div>
 
@@ -1344,17 +1355,69 @@ function renderMapa(){
 function trocarMapa(id){STATE.mapaAtivo=id;renderMapa();}
 function filtrarMapaRegen(v){STATE.mapaRegFiltro=v;renderMapa();}
 function setDragMode(m){STATE.dragMode=m;renderMapa();}
-function resetPosicoes(){
-  if(!confirm("Restaurar todas as posições dos indicadores para o padrão?"))return;
-  // reindexa por ordem dentro de cada regenerador (funciona com códigos extras)
-  CONFIG.regeneradores.forEach(reg=>{
-    const doReg=STATE.plataformas.filter(p=>p.regen===reg.id)
+/* Plataformas ATIVAS ainda NÃO marcadas no mapa atualmente selecionado */
+function platsForaDoMapa(){
+  return platsAtivas().filter(p=>!(p.posMapa && p.posMapa[STATE.mapaAtivo]));
+}
+/* <optgroup> por regenerador com as plataformas fora do mapa atual */
+function optsForaDoMapa(){
+  const fora=platsForaDoMapa();
+  return CONFIG.regeneradores.map(reg=>{
+    const doReg=fora.filter(p=>p.regen===reg.id)
       .sort((a,b)=>a.cod.localeCompare(b.cod,undefined,{numeric:true}));
-    doReg.forEach((p,idx)=>{ p.posMapa=posInicialMapa(reg.id, idx); });
-  });
-  logAudit("Posições do mapa restauradas",CONFIG.mapas.find(m=>m.id===STATE.mapaAtivo).nome,"");
-  toast("Posições restauradas.","ok");
-  drawMapa();
+    if(!doReg.length) return '';
+    return `<optgroup label="${reg.nome}">`+
+      doReg.map(p=>`<option value="${p.cod}">${p.cod} — ${STATUS_MAP[p.status].label}</option>`).join('')+
+      `</optgroup>`;
+  }).join('');
+}
+/* Marca (posiciona) a plataforma escolhida no centro do mapa atual */
+function marcarNoMapa(){
+  const sel=document.getElementById('mapaAddSel');
+  if(!sel||!sel.value){toast("Selecione uma plataforma para marcar.","err");return;}
+  const cod=sel.value;
+  const p=STATE.plataformas.find(z=>z.cod===cod);
+  if(!p)return;
+  if(!p.posMapa)p.posMapa={};
+  p.posMapa[STATE.mapaAtivo]={x:50,y:50};
+  STATE.dragMode='unit';            // já entra no modo de mover individual
+  const nome=CONFIG.mapas.find(m=>m.id===STATE.mapaAtivo).nome;
+  logAudit("Plataforma marcada no mapa",`Plataforma ${cod}`,`Marcada em ${nome}. Arraste para a posição correta.`);
+  toast(`Plataforma ${cod} marcada em ${nome}. Arraste para posicionar.`,"ok");
+  renderMapa();
+}
+/* Remove a marcação da plataforma somente do mapa atual (não exclui a plataforma) */
+function removerDoMapa(cod){
+  const p=STATE.plataformas.find(z=>z.cod===cod);
+  if(!p||!p.posMapa)return;
+  const nome=CONFIG.mapas.find(m=>m.id===STATE.mapaAtivo).nome;
+  if(!confirm(`Remover a plataforma ${cod} do mapa "${nome}"? A plataforma continua no sistema.`))return;
+  delete p.posMapa[STATE.mapaAtivo];
+  logAudit("Plataforma removida do mapa",`Plataforma ${cod}`,`Retirada de ${nome}.`);
+  toast(`Plataforma ${cod} removida deste mapa.`,"ok");
+  renderMapa();
+}
+function resetPosicoes(){
+  const mapaId=STATE.mapaAtivo;
+  const nome=CONFIG.mapas.find(m=>m.id===mapaId).nome;
+  if(mapaId==='carcaca'){
+    // restaura SOMENTE as posições padrão da carcaça (não toca em outros mapas)
+    if(!confirm(`Restaurar as posições padrão dos indicadores em "${nome}"?`))return;
+    CONFIG.regeneradores.forEach(reg=>{
+      const doReg=STATE.plataformas.filter(p=>p.regen===reg.id)
+        .sort((a,b)=>a.cod.localeCompare(b.cod,undefined,{numeric:true}));
+      doReg.forEach((p,idx)=>{ if(!p.posMapa)p.posMapa={}; p.posMapa.carcaca=posInicialMapa(reg.id, idx).carcaca; });
+    });
+    logAudit("Posições do mapa restauradas",nome,"Posições padrão restauradas.");
+    toast("Posições restauradas.","ok");
+  } else {
+    // demais mapas (ex.: Câmara de Combustão) não têm padrão: a opção limpa as marcações
+    if(!confirm(`Limpar todas as marcações de "${nome}"? As plataformas continuam no sistema.`))return;
+    STATE.plataformas.forEach(p=>{ if(p.posMapa) delete p.posMapa[mapaId]; });
+    logAudit("Marcações do mapa removidas",nome,"Todas as marcações deste mapa foram limpas.");
+    toast("Marcações removidas deste mapa.","ok");
+  }
+  renderMapa();
 }
 function carregarMapa(ev){
   const f=ev.target.files[0];if(!f)return;
@@ -1403,6 +1466,7 @@ function drawMapa(){
     el.addEventListener('touchstart', pinPointerDown, {passive:false});
     el.addEventListener('click', e=>{
       if(_dragMoved) {e.preventDefault();return;}
+      if(STATE.dragMode==='remover' && temPerm('mapa_edit')){ removerDoMapa(el.dataset.cod); return; }
       abrirFicha(el.dataset.cod);
     });
   });
@@ -1411,7 +1475,7 @@ function drawMapa(){
 /* ===== DRAG-AND-DROP DOS PINOS (unitário e agrupado) ===== */
 let _dragState=null, _dragMoved=false;
 function pinPointerDown(ev){
-  if(!temPerm('mapa_edit') || STATE.dragMode==='off') return; // só com permissão e modo ativo
+  if(!temPerm('mapa_edit') || STATE.dragMode==='off' || STATE.dragMode==='remover') return; // só com permissão e modo de arraste
   ev.preventDefault();
   const el=ev.currentTarget;
   const wrap=document.getElementById('mapaWrap');

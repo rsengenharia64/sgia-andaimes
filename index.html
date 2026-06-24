@@ -359,6 +359,9 @@ input,select,textarea{font-family:inherit;font-size:15px}
 </head>
 <body>
 
+<!-- Supabase SDK (login real + backend) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
 <!-- ================= LOGIN ================= -->
 <div id="login">
   <div class="login-card">
@@ -368,16 +371,16 @@ input,select,textarea{font-family:inherit;font-size:15px}
     </div>
     <p class="login-sub">Sistema de Gestão de Integridade de Andaimes<br>Regeneradores 1 a 4 — Controle de plataformas</p>
     <div class="field">
-      <label>Usuário</label>
-      <input type="text" id="loginUser" placeholder="seu.usuario" autocomplete="off">
+      <label>E-mail</label>
+      <input type="email" id="loginUser" placeholder="seu.email@empresa.com" autocomplete="username">
     </div>
     <div class="field">
       <label>Senha</label>
       <input type="password" id="loginPass" placeholder="••••••••">
     </div>
-    <button class="btn" onclick="doLogin()">Entrar no sistema</button>
+    <button class="btn" onclick="doLoginReal()">Entrar</button>
     <div class="login-perfis">
-      <p>Acesso rápido para demonstração</p>
+      <p>Ou entre em modo demonstração</p>
       <div id="perfilChips"></div>
     </div>
     <div class="login-footer">Desenvolvido por <b>Eng. Rander Bruno</b></div>
@@ -487,7 +490,12 @@ const PERFIS = {
   coordenador:  {nome:"Coordenador",   cor:"#2f81f7", perms:["ver","inspecionar","fotos","relatorios","mapa_edit","seguranca"]},
   supervisor:   {nome:"Supervisor",    cor:"#3fb950", perms:["ver","inspecionar","fotos","relatorios","seguranca"]},
   encarregado:  {nome:"Encarregado",   cor:"#d29922", perms:["ver","inspecionar","fotos","seguranca"]},
-  visualizador: {nome:"Visualizador (Cliente)", cor:"#6b7785", perms:["ver","relatorios"]}
+  diretor:          {nome:"Diretor / CEO",       cor:"#b3261e", perms:["ver","relatorios"]},
+  gerente:          {nome:"Gerente",             cor:"#0d9488", perms:["ver","inspecionar","fotos","relatorios","mapa_edit","seguranca","usuarios"]},
+  tecnico:          {nome:"Técnico",             cor:"#0ea5e9", perms:["ver","inspecionar","fotos","seguranca"]},
+  gestor_contratos: {nome:"Gestor de contratos", cor:"#9333ea", perms:["ver","relatorios","seguranca"]},
+  fiscal:           {nome:"Fiscal (Cliente)",    cor:"#6b7785", perms:["ver","relatorios"]},
+  visualizador:     {nome:"Visualizador (Cliente)", cor:"#6b7785", perms:["ver","relatorios"]}
 };
 const PERM_LABELS = {ver:"Visualizar",inspecionar:"Inspecionar",fotos:"Anexar fotos",fotos_del:"Excluir fotos",relatorios:"Relatórios",seguranca:"Registrar segurança",usuarios:"Gerir usuários",admin:"Configurar sistema",mapa_edit:"Editar mapa"};
 
@@ -536,7 +544,14 @@ function fmtDataHora(d){const x=new Date(d);return x.toLocaleDateString('pt-BR')
 function addDias(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function diasEntre(a,b){return Math.floor((new Date(b)-new Date(a))/(1000*60*60*24));}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
-function temPerm(p){return STATE.usuario && PERFIS[STATE.usuario.perfil].perms.includes(p);}
+function temPerm(p){
+  if(!STATE.usuario) return false;
+  const pf=PERFIS[STATE.usuario.perfil];
+  const base = pf ? pf.perms : [];
+  const add = STATE.usuario.permsAdd || [];
+  const rem = STATE.usuario.permsRemove || [];
+  return (base.includes(p) && !rem.includes(p)) || add.includes(p);
+}
 function modOn(id){const m=CONFIG.modulos.find(x=>x.id===id);return m?m.on:false;}
 function iniciais(nome){return nome.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();}
 
@@ -673,25 +688,77 @@ function quickLogin(user){
   document.getElementById('loginPass').value="demo";
   doLogin();
 }
-function doLogin(){
-  const u=document.getElementById('loginUser').value.trim().toLowerCase();
-  const usr=USUARIOS.find(x=>x.user===u);
-  if(!usr){toast("Usuário não encontrado. Use os botões de acesso rápido.","err");return;}
-  STATE.usuario=usr;
-  // inicializa dados na primeira entrada
+/* ===== BACKEND (Supabase) — cliente sob demanda ===== */
+let _sb=null;
+const SB_URL="https://otosjiefbkhrrjrluntj.supabase.co";
+const SB_KEY="sb_publishable_qXGO3pdDZcJHu5yJLLcJ8w_Ob0gkPha";
+function sbClient(){
+  if(!_sb){
+    if(!window.supabase) throw new Error("SDK do Supabase não carregou");
+    _sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
+  }
+  return _sb;
+}
+
+/* Carga dos dados de demonstração (placeholder enquanto os módulos não leem do banco) */
+function iniciarDadosDemo(){
   if(STATE.plataformas.length===0){
     STATE.plataformas=gerarPlataformas();
     STATE.ocorrencias=gerarOcorrencias();
-    // carrega as imagens de fundo dos mapas (embutidas no sistema)
     STATE.mapaImgs.carcaca = IMG_CARCACA;
     STATE.mapaImgs.camara  = IMG_CAMARA;
     STATE.auditoria=[{id:uid(),data:hoje(),usuario:"Sistema",perfil:"—",acao:"Carga inicial",alvo:"Sistema",detalhe:`${STATE.plataformas.length} plataformas cadastradas nos ${CONFIG.regeneradores.length} regeneradores.`}];
   }
+}
+function abrirApp(){
   document.getElementById('login').style.display='none';
   document.getElementById('app').style.display='flex';
   aplicarSessao();
   goPage('dashboard');
-  toast(`Bem-vindo, ${usr.nome.split(' ')[0]}!`,"ok");
+}
+
+/* ===== LOGIN REAL (Supabase Auth) ===== */
+async function doLoginReal(){
+  const email=document.getElementById('loginUser').value.trim();
+  const senha=document.getElementById('loginPass').value;
+  if(!email || !senha){toast("Informe e-mail e senha.","err");return;}
+  let sb; try{ sb=sbClient(); }catch(e){ toast("Backend indisponível no momento.","err"); return; }
+  toast("Entrando...","ok");
+  try{
+    const {data,error}=await sb.auth.signInWithPassword({email,password:senha});
+    if(error || !data || !data.user){ toast("E-mail ou senha inválidos.","err"); return; }
+    await aplicarUsuarioReal(sb, data.user);
+  }catch(e){ toast("Falha ao conectar. Tente novamente.","err"); }
+}
+
+/* Monta STATE.usuario a partir do perfil real no banco */
+async function aplicarUsuarioReal(sb, user){
+  let perfil='visualizador', nome=(user.email||'Usuário'), permsAdd=[], permsRemove=[];
+  try{
+    const {data:u}=await sb.from('usuarios')
+      .select('nome,perfil,perms_add,perms_remove,ativo').eq('id',user.id).single();
+    if(u){
+      if(u.ativo===false){ toast("Usuário inativo. Procure o administrador.","err"); await sb.auth.signOut(); return; }
+      perfil=u.perfil||perfil; nome=u.nome||nome;
+      permsAdd=u.perms_add||[]; permsRemove=u.perms_remove||[];
+    }
+  }catch(e){ /* sem perfil ainda: entra como visualizador */ }
+  if(!PERFIS[perfil]) perfil='visualizador';
+  STATE.usuario={ id:user.id, user:user.email, email:user.email, nome, perfil, permsAdd, permsRemove, real:true };
+  iniciarDadosDemo();
+  abrirApp();
+  toast(`Bem-vindo, ${nome.split(' ')[0]}!`,"ok");
+}
+
+/* ===== MODO DEMONSTRAÇÃO (sem conta) ===== */
+function doLogin(){
+  const u=document.getElementById('loginUser').value.trim().toLowerCase();
+  const usr=USUARIOS.find(x=>x.user===u);
+  if(!usr){toast("Para demonstração, use os botões de acesso rápido abaixo.","err");return;}
+  STATE.usuario={...usr, real:false};
+  iniciarDadosDemo();
+  abrirApp();
+  toast(`Bem-vindo, ${usr.nome.split(' ')[0]}! (demonstração)`,"ok");
 }
 /* Atualiza topbar e menu conforme o usuário/perfil atual.
    Chamado no login e sempre que o nível de acesso do usuário logado muda. */
@@ -704,6 +771,7 @@ function aplicarSessao(){
   buildNav();
 }
 function logout(){
+  try{ if(_sb) _sb.auth.signOut(); }catch(e){}
   STATE.usuario=null;
   document.getElementById('app').style.display='none';
   document.getElementById('login').style.display='flex';
@@ -2349,10 +2417,18 @@ function toast(msg,tipo){
   clearTimeout(_toastT);_toastT=setTimeout(()=>t.className='',2800);
 }
 document.getElementById('modalBg').addEventListener('click',e=>{if(e.target.id==='modalBg')fecharModal();});
-document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLoginReal();});
 
 // inicializa tela de login
 renderChips();
+// restaura sessão real, se houver (login persistente — não desloga sozinho)
+(async function(){
+  try{
+    const sb=sbClient();
+    const {data}=await sb.auth.getSession();
+    if(data && data.session && data.session.user){ await aplicarUsuarioReal(sb, data.session.user); }
+  }catch(e){}
+})();
 </script>
 </body>
 </html>

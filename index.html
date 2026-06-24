@@ -640,6 +640,8 @@ function gerarOcorrencias(){
     data: addDias(hoje(), -(i*2+1)),
     categoria:o.cat, local:o.local, descricao:o.desc, acaoCorretiva:o.acao,
     situacao:o.sit, responsavel:resps[i%resps.length],
+    autor:resps[i%resps.length],
+    acaoResponsavel:o.acao?["Equipe de Manutenção","Equipe de Montagem","Equipe de Segurança","Supervisão de Campo"][i%4]:"",
     fotos:[]
   }));
 }
@@ -1619,7 +1621,8 @@ function drawOcorrencias(){
       <div class="sc-desc">${o.descricao}</div>
       <div class="sc-meta">
         <span>📍 ${o.local||'—'}</span>
-        <span>👤 ${o.responsavel}</span>
+        <span>👤 ${o.autor||o.responsavel}</span>
+        ${o.acaoResponsavel?`<span>🛠️ ${o.acaoResponsavel}</span>`:''}
         <span>🕓 ${fmtDataHora(o.data)}</span>
         ${o.fotos.length?`<span>📷 ${o.fotos.length} foto(s)</span>`:''}
       </div>
@@ -1635,7 +1638,7 @@ function drawOcorrenciaModal(o){
   box.innerHTML=`
     <div class="modal-head">
       <div><div class="mt">🦺 ${isNew?'Novo registro de segurança':'Ocorrência de segurança'}</div>
-      <div class="mc">${isNew?'Preencha os dados da ocorrência':fmtDataHora(o.data)+' • '+o.responsavel}</div></div>
+      <div class="mc">${isNew?'Preencha os dados da ocorrência':fmtDataHora(o.data)+' • '+(o.autor||o.responsavel)}</div></div>
       <button class="modal-x" onclick="fecharModal()">✕</button>
     </div>
     <div class="modal-body">
@@ -1652,12 +1655,18 @@ function drawOcorrenciaModal(o){
             <option value="encerrada" ${v('situacao')==='encerrada'?'selected':''}>Encerrada</option>
           </select></div>
       </div>
-      <div class="field"><label>Local</label>
-        <input id="ocLocal" value="${v('local')}" placeholder="Ex: Regenerador 2 - Plataforma 2H" ${!podeReg?'disabled':''}></div>
+      <div class="row-2">
+        <div class="field"><label>Autor do registro</label>
+          <input id="ocAutor" value="${v('autor', isNew?STATE.usuario.nome:'')}" placeholder="Quem identificou / praticou a segurança" ${!podeReg?'disabled':''}></div>
+        <div class="field"><label>Local</label>
+          <input id="ocLocal" value="${v('local')}" placeholder="Ex: Regenerador 2 - Plataforma 2H" ${!podeReg?'disabled':''}></div>
+      </div>
       <div class="field"><label>Descrição detalhada</label>
         <textarea id="ocDesc" rows="3" placeholder="Descreva a condição, desvio ou observação..." ${!podeReg?'disabled':''}>${v('descricao')}</textarea></div>
       <div class="field"><label>Ação corretiva / imediata adotada</label>
         <textarea id="ocAcao" rows="2" placeholder="O que foi feito..." ${!podeReg?'disabled':''}>${v('acaoCorretiva')}</textarea></div>
+      <div class="field"><label>Responsável pela ação corretiva (quem ou equipe)</label>
+        <input id="ocAcaoResp" value="${v('acaoResponsavel')}" placeholder="Ex: Equipe de Manutenção / João Silva" ${!podeReg?'disabled':''}></div>
       <div class="field"><label>Evidências fotográficas</label>
         ${podeReg?`<div class="upload-zone" onclick="document.getElementById('ocFotoInput').click()" style="padding:18px">
           <div class="uic" style="font-size:26px">📷</div><div style="font-weight:600">Adicionar fotos</div>
@@ -1702,14 +1711,16 @@ function salvarOcorrencia(isNew){
   const local=document.getElementById('ocLocal').value.trim();
   const desc=document.getElementById('ocDesc').value.trim();
   const acao=document.getElementById('ocAcao').value.trim();
+  const autor=(document.getElementById('ocAutor')?.value||'').trim();
+  const acaoResp=(document.getElementById('ocAcaoResp')?.value||'').trim();
   if(!desc){toast("Descreva a ocorrência.","err");return;}
   if(isNew){
-    STATE.ocorrencias.unshift({id:uid(),data:hoje(),categoria:cat,situacao:sit,local,descricao:desc,acaoCorretiva:acao,responsavel:STATE.usuario.nome,fotos:_ocFotosTmp||[]});
+    STATE.ocorrencias.unshift({id:uid(),data:hoje(),categoria:cat,situacao:sit,local,descricao:desc,acaoCorretiva:acao,acaoResponsavel:acaoResp,autor:autor||STATE.usuario.nome,responsavel:STATE.usuario.nome,fotos:_ocFotosTmp||[]});
     _ocFotosTmp=null;
     logAudit("Ocorrência de segurança registrada",catNome(cat),`${SIT_MAP[sit].label} • ${local||'sem local'}`);
     toast("Ocorrência registrada!","ok");
   }else{
-    const o=STATE.segAtual;o.categoria=cat;o.situacao=sit;o.local=local;o.descricao=desc;o.acaoCorretiva=acao;
+    const o=STATE.segAtual;o.categoria=cat;o.situacao=sit;o.local=local;o.descricao=desc;o.acaoCorretiva=acao;o.acaoResponsavel=acaoResp;o.autor=autor;
     logAudit("Ocorrência de segurança atualizada",catNome(cat),`Situação: ${SIT_MAP[sit].label}`);
     toast("Ocorrência atualizada!","ok");
   }
@@ -2079,12 +2090,13 @@ function gerarPDFseguranca(){
     doc.setTextColor(...sitCor);doc.text(SIT_MAP[o.situacao].label,W-16,y+1.5,{align:'right'});
     doc.setTextColor(33);y+=10;
     doc.setFontSize(9);doc.setFont(undefined,'normal');
-    doc.text(`Data/hora: ${fmtDataHora(o.data)}    Responsável: ${o.responsavel}`,16,y);y+=5;
-    doc.text(`Local: ${o.local||'—'}`,16,y);y+=5;
+    doc.text(`Data/hora: ${fmtDataHora(o.data)}    Autor: ${o.autor||o.responsavel}`,16,y);y+=5;
+    doc.text(`Local: ${o.local||'—'}    Registrado por: ${o.responsavel}`,16,y);y+=5;
     doc.setFont(undefined,'bold');doc.text('Descrição:',16,y);doc.setFont(undefined,'normal');
     const dl=doc.splitTextToSize(o.descricao||'—',W-36);doc.text(dl,40,y);y+=dl.length*5+1;
     doc.setFont(undefined,'bold');doc.text('Ação:',16,y);doc.setFont(undefined,'normal');
     const al=doc.splitTextToSize(o.acaoCorretiva||'—',W-36);doc.text(al,40,y);y+=al.length*5+2;
+    if(o.acaoResponsavel){doc.setFont(undefined,'bold');doc.text('Resp. ação:',16,y);doc.setFont(undefined,'normal');const rl=doc.splitTextToSize(o.acaoResponsavel,W-36);doc.text(rl,40,y);y+=rl.length*5+2;}
     // fotos da ocorrência
     if(o.fotos.length){
       if(y+44>285){doc.addPage();y=20;}

@@ -1115,6 +1115,7 @@ function abrirFicha(cod){
   STATE.modalTab='resumo';
   drawModal();
   document.getElementById('modalBg').classList.add('open');
+  imgCarregarPlat(p);
 }
 function fecharModal(){document.getElementById('modalBg').classList.remove('open');STATE.platAtual=null;}
 function setModalTab(t){STATE.modalTab=t;drawModal();}
@@ -1375,34 +1376,92 @@ function salvarInspecao(){
 }
 
 /* ---- FOTOS ---- */
-function addFotos(ev){
+/* ===== IMAGENS — upload real para o Storage (bucket sgia-imagens, R2-ready) ===== */
+async function _imgBlob(cv,q){ return await new Promise(r=>cv.toBlob(r,'image/jpeg',q)); }
+async function imgUploadCanvas(cv, tipo, entidadeId){
+  const sb=sbClient();
+  if(!STATE.contratoId) await segGarantirContrato(sb);
+  const blob=await _imgBlob(cv,0.75);
+  const ts=Math.min(1,200/Math.max(cv.width,cv.height));
+  const tc=document.createElement('canvas'); tc.width=Math.max(1,Math.round(cv.width*ts)); tc.height=Math.max(1,Math.round(cv.height*ts));
+  tc.getContext('2d').drawImage(cv,0,0,tc.width,tc.height);
+  const tblob=await _imgBlob(tc,0.6);
+  const uid2=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():(''+Date.now()+Math.random().toString(36).slice(2));
+  const baseP=STATE.contratoId+'/'+tipo+'/'+entidadeId+'/'+uid2;
+  const path=baseP+'.jpg', pathT=baseP+'_t.jpg';
+  const up=await sb.storage.from('sgia-imagens').upload(path,blob,{contentType:'image/jpeg'});
+  if(up.error) throw up.error;
+  await sb.storage.from('sgia-imagens').upload(pathT,tblob,{contentType:'image/jpeg'});
+  const {data:row}=await sb.from('imagens').insert({
+    contrato_id:STATE.contratoId, entidade_tipo:tipo, entidade_id:entidadeId,
+    provider:'supabase', bucket:'sgia-imagens', path:path, path_thumb:pathT,
+    tamanho:blob.size, criado_por_id:STATE.usuario.id
+  }).select('id').single();
+  const {data:sg}=await sb.storage.from('sgia-imagens').createSignedUrl(path,3600);
+  return { id:(row&&row.id)||uid2, dbId:(row&&row.id)||null, path:path, pathT:pathT, src:(sg&&sg.signedUrl)||'', data:hoje(), autor:STATE.usuario.nome };
+}
+async function imgUploadDataUrl(dataUrl, tipo, entidadeId){
+  const bmp=await createImageBitmap(await (await fetch(dataUrl)).blob());
+  const cv=document.createElement('canvas'); cv.width=bmp.width; cv.height=bmp.height;
+  cv.getContext('2d').drawImage(bmp,0,0);
+  return await imgUploadCanvas(cv,tipo,entidadeId);
+}
+async function imgCarregar(tipo, entidadeId){
+  const sb=sbClient();
+  const {data}=await sb.from('imagens').select('*').eq('entidade_tipo',tipo).eq('entidade_id',entidadeId).is('excluido_em',null).order('created_at');
+  const out=[];
+  for(const r of (data||[])){
+    const {data:sg}=await sb.storage.from('sgia-imagens').createSignedUrl(r.path,3600);
+    out.push({ id:r.id, dbId:r.id, path:r.path, pathT:r.path_thumb, src:(sg&&sg.signedUrl)||'', data:r.created_at, autor:'' });
+  }
+  return out;
+}
+async function imgExcluir(foto){
+  if(!foto || !foto.dbId) return;
+  try{
+    const sb=sbClient();
+    await sb.from('imagens').update({excluido_em:new Date().toISOString()}).eq('id',foto.dbId);
+    const paths=[foto.path,foto.pathT].filter(Boolean);
+    if(paths.length) await sb.storage.from('sgia-imagens').remove(paths);
+  }catch(e){ console.warn('imgExcluir',e); }
+}
+async function imgCarregarPlat(p){
+  if(!STATE.usuario||!STATE.usuario.real||!p||!p.dbId||p._fotosCarregadas) return;
+  try{ p.fotos=await imgCarregar('plataforma',p.dbId); p._fotosCarregadas=true; if(STATE.platAtual===p) drawModal(); }catch(e){ console.warn('imgCarregarPlat',e); }
+}
+async function imgCarregarOc(o){
+  if(!STATE.usuario||!STATE.usuario.real||!o||!o.id||o._fotosCarregadas) return;
+  try{ o.fotos=await imgCarregar('ocorrencia',o.id); o._fotosCarregadas=true; if(STATE.segAtual===o) drawOcorrenciaModal(o); }catch(e){ console.warn('imgCarregarOc',e); }
+}
+
+async function addFotos(ev){
   const files=[...ev.target.files];
   const p=STATE.platAtual;
-  let pend=files.length;
-  if(!pend)return;
-  files.forEach(file=>{
-    const reader=new FileReader();
-    reader.onload=e=>{
-      // redimensiona para não estourar memória (canvas)
-      const img=new Image();
-      img.onload=()=>{
-        const max=900,sc=Math.min(1,max/Math.max(img.width,img.height));
-        const cv=document.createElement('canvas');
-        cv.width=img.width*sc;cv.height=img.height*sc;
-        cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+  if(!files.length)return;
+  const real=STATE.usuario&&STATE.usuario.real;
+  let okc=0;
+  for(const file of files){
+    try{
+      const bmp=await createImageBitmap(file);
+      const max=900,sc=Math.min(1,max/Math.max(bmp.width,bmp.height));
+      const cv=document.createElement('canvas'); cv.width=Math.round(bmp.width*sc); cv.height=Math.round(bmp.height*sc);
+      cv.getContext('2d').drawImage(bmp,0,0,cv.width,cv.height);
+      if(real && p.dbId){
+        try{ const fo=await imgUploadCanvas(cv,'plataforma',p.dbId); p.fotos.push(fo); }
+        catch(e){ console.warn('upload foto',e); p.fotos.push({id:uid(),src:cv.toDataURL('image/jpeg',0.75),data:hoje(),autor:STATE.usuario.nome}); toast('Foto exibida, mas houve erro ao salvar no servidor.','err'); }
+      }else{
         p.fotos.push({id:uid(),src:cv.toDataURL('image/jpeg',0.75),data:hoje(),autor:STATE.usuario.nome});
-        pend--;
-        if(pend===0){
-          logAudit("Fotos anexadas",`Plataforma ${p.cod}`,`${files.length} foto(s) adicionada(s).`);
-          p.historico.unshift({data:hoje(),usuario:STATE.usuario.nome,acao:"Evidência fotográfica",status:null,detalhe:`${files.length} foto(s) anexada(s).`});
-          toast(`${files.length} foto(s) anexada(s)!`,"ok");
-          drawModal();
-        }
-      };
-      img.src=e.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
+      }
+      okc++;
+    }catch(e){ console.warn('foto',e); }
+  }
+  if(okc){
+    logAudit("Fotos anexadas",`Plataforma ${p.cod}`,`${okc} foto(s) adicionada(s).`);
+    p.historico.unshift({data:hoje(),usuario:STATE.usuario.nome,acao:"Evidência fotográfica",status:null,detalhe:`${okc} foto(s) anexada(s).`});
+    if(real && p.dbId) platSalvar(p);
+    toast(`${okc} foto(s) anexada(s)!`,"ok");
+    drawModal();
+  }
 }
 function delFoto(id){
   if(!temPerm('fotos_del')){toast("Apenas o Administrador pode excluir fotos.","err");return;}
@@ -1410,6 +1469,7 @@ function delFoto(id){
   const foto=p.fotos.find(f=>f.id===id);
   if(!foto)return;
   if(!confirm("Excluir esta evidência fotográfica? A ação ficará registrada no histórico."))return;
+  if(STATE.usuario&&STATE.usuario.real) imgExcluir(foto);
   p.fotos=p.fotos.filter(f=>f.id!==id);
   const agora=hoje();
   // registro detalhado no histórico da plataforma (usuário, data e hora)
@@ -1418,6 +1478,7 @@ function delFoto(id){
     detalhe:`Evidência removida por ${STATE.usuario.nome} em ${fmtDataHora(agora)} (foto anexada em ${fmtData(foto.data)} por ${foto.autor}).`
   });
   logAudit("Foto excluída",`Plataforma ${p.cod}`,`Removida por ${STATE.usuario.nome} em ${fmtDataHora(agora)}.`);
+  if(STATE.usuario&&STATE.usuario.real&&p.dbId) platSalvar(p);
   toast("Foto excluída e registrada no histórico.","ok");
   drawModal();
 }
@@ -1818,7 +1879,7 @@ function drawOcorrencias(){
     </div>`).join('');
 }
 function novaOcorrencia(){STATE.segAtual=null;_ocFotosTmp=null;drawOcorrenciaModal(null);document.getElementById('modalBg').classList.add('open');}
-function abrirOcorrencia(id){const o=STATE.ocorrencias.find(x=>x.id===id);STATE.segAtual=o;drawOcorrenciaModal(o);document.getElementById('modalBg').classList.add('open');}
+function abrirOcorrencia(id){const o=STATE.ocorrencias.find(x=>x.id===id);STATE.segAtual=o;drawOcorrenciaModal(o);document.getElementById('modalBg').classList.add('open');imgCarregarOc(o);}
 function drawOcorrenciaModal(o){
   const podeReg=temPerm('seguranca');
   const isNew=!o;
@@ -1871,27 +1932,33 @@ function drawOcorrenciaModal(o){
 }
 let _ocFotosTmp=null;
 function getOcFotos(){if(STATE.segAtual)return STATE.segAtual.fotos;if(!_ocFotosTmp)_ocFotosTmp=[];return _ocFotosTmp;}
-function addFotoOcorrencia(ev){
-  const files=[...ev.target.files];let pend=files.length;if(!pend)return;
+async function addFotoOcorrencia(ev){
+  const files=[...ev.target.files];if(!files.length)return;
+  const real=STATE.usuario&&STATE.usuario.real;
+  const oc=STATE.segAtual;
   const alvo=getOcFotos();
-  files.forEach(file=>{
-    const rd=new FileReader();
-    rd.onload=e=>{
-      const img=new Image();
-      img.onload=()=>{
-        const max=900,sc=Math.min(1,max/Math.max(img.width,img.height));
-        const cv=document.createElement('canvas');cv.width=img.width*sc;cv.height=img.height*sc;
-        cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+  let okc=0;
+  for(const file of files){
+    try{
+      const bmp=await createImageBitmap(file);
+      const max=900,sc=Math.min(1,max/Math.max(bmp.width,bmp.height));
+      const cv=document.createElement('canvas');cv.width=Math.round(bmp.width*sc);cv.height=Math.round(bmp.height*sc);
+      cv.getContext('2d').drawImage(bmp,0,0,cv.width,cv.height);
+      if(real && oc && oc.id){
+        try{ const fo=await imgUploadCanvas(cv,'ocorrencia',oc.id); alvo.push(fo); }
+        catch(e){ console.warn(e); alvo.push({id:uid(),src:cv.toDataURL('image/jpeg',0.72),data:hoje(),autor:STATE.usuario.nome}); toast('Foto exibida, mas erro ao salvar no servidor.','err'); }
+      }else{
         alvo.push({id:uid(),src:cv.toDataURL('image/jpeg',0.72),data:hoje(),autor:STATE.usuario.nome});
-        pend--;if(pend===0){drawOcorrenciaModal(STATE.segAtual);toast(`${files.length} foto(s) adicionada(s)!`,"ok");}
-      };img.src=e.target.result;
-    };rd.readAsDataURL(file);
-  });
+      }
+      okc++;
+    }catch(e){ console.warn(e); }
+  }
+  if(okc){ drawOcorrenciaModal(STATE.segAtual); toast(`${okc} foto(s) adicionada(s)!`,"ok"); }
 }
 function delFotoOcorrencia(id){
   if(!temPerm('fotos_del')){toast("Apenas o Administrador pode excluir fotos.","err");return;}
   const alvo=getOcFotos();const i=alvo.findIndex(f=>f.id===id);
-  if(i>=0){alvo.splice(i,1);drawOcorrenciaModal(STATE.segAtual);toast("Foto removida.","ok");}
+  if(i>=0){ if(STATE.usuario&&STATE.usuario.real) imgExcluir(alvo[i]); alvo.splice(i,1);drawOcorrenciaModal(STATE.segAtual);toast("Foto removida.","ok");}
 }
 async function salvarOcorrencia(isNew){
   if(!temPerm('seguranca')){toast("Sem permissão.","err");return;}
@@ -1911,12 +1978,15 @@ async function salvarOcorrencia(isNew){
       await segGarantirContrato(sb);
       if(!STATE.contratoId){toast("Nenhum contrato disponível para vincular.","err");return;}
       if(isNew){
-        const {error}=await sb.from('ocorrencias_seguranca').insert({
+        const {data:novoOc,error}=await sb.from('ocorrencias_seguranca').insert({
           contrato_id:STATE.contratoId, categoria:cat, situacao:sit, local, descricao:desc,
           acao_corretiva:acao, acao_responsavel:acaoResp, autor:autor||STATE.usuario.nome,
           registrado_por_id:STATE.usuario.id, created_by:STATE.usuario.id, updated_by:STATE.usuario.id
-        });
+        }).select('id').single();
         if(error) throw error;
+        if(novoOc && _ocFotosTmp && _ocFotosTmp.length){
+          for(const ff of _ocFotosTmp){ try{ await imgUploadDataUrl(ff.src,'ocorrencia',novoOc.id); }catch(e){ console.warn('foto nova oc',e); } }
+        }
         toast("Ocorrência registrada!","ok");
       }else{
         const {error}=await sb.from('ocorrencias_seguranca').update({

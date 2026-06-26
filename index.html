@@ -454,7 +454,7 @@ const CONFIG = {
     {id:"etiqueta",  nome:"Etiqueta de identificação",  ic:"🏷️"}
   ],
   // URL base para os QR Codes (em produção vira o domínio real do sistema)
-  baseUrl: "https://sgia.suaempresa.com.br/p/",
+  baseUrl: "https://rsengenharia64.github.io/sgia-andaimes/?p=",
   // MAPAS VISUAIS disponíveis (cada um com uma imagem de fundo própria)
   mapas: [
     {id:"carcaca", nome:"Carcaça dos Regeneradores", ic:"🏛️"},
@@ -715,6 +715,18 @@ function abrirApp(){
   document.getElementById('app').style.display='flex';
   aplicarSessao();
   goPage('dashboard');
+  abrirPlataformaPendente();
+}
+/* Deep-link do QR: ?p=COD abre direto a ficha da plataforma ao escanear em campo */
+function abrirPlataformaPendente(){
+  try{
+    const cod=new URLSearchParams(location.search).get('p');
+    if(!cod) return;
+    const alvo=cod.trim().toUpperCase();
+    const p=STATE.plataformas.find(x=>x.cod===alvo);
+    if(p){ setTimeout(()=>abrirFicha(p.cod), 350); }
+    else { toast(`Plataforma ${alvo} não encontrada nesta base.`,"err"); }
+  }catch(e){}
 }
 
 /* ===== LOGIN REAL (Supabase Auth) ===== */

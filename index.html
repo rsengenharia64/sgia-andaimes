@@ -565,10 +565,10 @@ function posInicialMapa(regId, idx){
   const frac = n>1 ? idx/(n-1) : 0.5;          // 0 (topo) .. 1 (base)
   // CARCAÇA (foto fechada dos 4 cilindros, centralizados)
   const colsCarcaca = {1:22, 2:39, 3:56, 4:73};
-  const carcaca = { x: colsCarcaca[regId], y: 6 + frac*88 };   // topo 6% -> base 94%
+  const carcaca = { x: colsCarcaca[regId], y: 6 + (1-frac)*88 };   // A embaixo (94%) -> sobe até o topo (6%)
   // CÂMARA (foto panorâmica larga; cilindros à esquerda-centro)
   const colsCamara = {1:30, 2:42, 3:54, 4:66};
-  const camara = { x: colsCamara[regId], y: 6 + frac*88 };
+  const camara = { x: colsCamara[regId], y: 6 + (1-frac)*88 };
   return { carcaca, camara };
 }
 

@@ -757,10 +757,11 @@ async function aplicarUsuarioReal(sb, user){
   }catch(e){ /* sem perfil ainda: entra como visualizador */ }
   if(!PERFIS[perfil]) perfil='visualizador';
   STATE.usuario={ id:user.id, user:user.email, email:user.email, nome, perfil, permsAdd, permsRemove, real:true };
-  STATE.segCarregado=false; STATE.contratoId=null;
+  STATE.segCarregado=false; STATE.contratoId=null; STATE.usuariosCarregado=false;
   iniciarDadosDemo();
   abrirApp();
   segCarregar();
+  usuariosCarregar();
   toast(`Bem-vindo, ${nome.split(' ')[0]}!`,"ok");
 }
 
@@ -2277,23 +2278,55 @@ function renderHistorico(){
 /* ====================================================================
    PÁGINA: USUÁRIOS
    ==================================================================== */
+/* ===== USUÁRIOS — persistência real (Supabase) ===== */
+function usuariosLista(){
+  return (STATE.usuario && STATE.usuario.real) ? (STATE.usuariosDB||[]) : USUARIOS;
+}
+async function usuariosCarregar(){
+  if(!STATE.usuario || !STATE.usuario.real) return;
+  try{
+    const sb=sbClient();
+    const {data,error}=await sb.from('usuarios')
+      .select('id,nome,email,perfil,ativo,perms_add,perms_remove').order('nome');
+    if(error) throw error;
+    STATE.usuariosDB=(data||[]).map(u=>({
+      id:u.id, nome:u.nome, email:u.email, user:(u.email||'').split('@')[0],
+      perfil:u.perfil, ativo:u.ativo, permsAdd:u.perms_add||[], permsRemove:u.perms_remove||[]
+    }));
+    STATE.usuariosCarregado=true;
+    if(typeof currentPage!=='undefined'){ if(currentPage==='admin')renderAdmin(); else if(currentPage==='usuarios')renderUsuarios(); }
+  }catch(e){ console.warn('usuariosCarregar',e); }
+}
+function _permEfetivo(perfil,add,rem){
+  const base=(PERFIS[perfil]||{perms:[]}).perms;
+  const s=new Set(base.filter(p=>!(rem||[]).includes(p)));
+  (add||[]).forEach(p=>s.add(p));
+  return s;
+}
+function _setPermChecks(set){ document.querySelectorAll('.permchk').forEach(c=>{ c.checked=set.has(c.value); }); }
+function resetPermsUI(){
+  const perfil=document.getElementById('nuPerfil').value;
+  const base=(PERFIS[perfil]||{perms:[]}).perms;
+  document.querySelectorAll('.permchk').forEach(c=>{ c.checked=base.includes(c.value); });
+}
 function renderUsuarios(){
   const c=document.getElementById('content');
   const podeGerir=temPerm('usuarios');
+  if(STATE.usuario && STATE.usuario.real && !STATE.usuariosCarregado){ usuariosCarregar(); }
   c.innerHTML=`
   <div class="page-head"><h3>👥 Controle de Usuários</h3><p>Inclua, edite e remova usuários e defina o nível de acesso</p></div>
   ${podeGerir?`<button class="btn-sm" style="margin-bottom:16px" onclick="modalUsuario()">➕ Novo usuário</button>`:`<div class="scope-note" style="margin-bottom:16px">👁️ Seu perfil pode visualizar, mas não gerir usuários.</div>`}
   <div class="panel">
-    <div class="panel-head"><h4>Usuários cadastrados</h4><div class="sub">${USUARIOS.length} usuário(s)</div></div>
-    ${USUARIOS.map(u=>{const p=PERFIS[u.perfil];const ehEu=STATE.usuario&&STATE.usuario.id===u.id;return `<div class="user-row">
+    <div class="panel-head"><h4>Usuários cadastrados</h4><div class="sub">${usuariosLista().length} usuário(s)</div></div>
+    ${usuariosLista().map(u=>{const p=PERFIS[u.perfil]||PERFIS.visualizador;const ehEu=STATE.usuario&&STATE.usuario.id===u.id;return `<div class="user-row">
       <div class="uav" style="background:${p.cor}">${iniciais(u.nome)}</div>
       <div class="uinfo"><div class="un">${u.nome} ${ehEu?'<span class="perm-tag">você</span>':''}</div><div class="ue">@${u.user} • ${u.email||'sem e-mail'}</div>
         <div style="margin-top:5px">${p.perms.slice(0,4).map(pm=>`<span class="perm-tag">${PERM_LABELS[pm]}</span>`).join('')}${p.perms.length>4?`<span class="perm-tag">+${p.perms.length-4}</span>`:''}</div></div>
       <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
         <span class="badge c" style="background:${p.cor}22;color:${p.cor};border-color:${p.cor}55">${p.nome}</span>
         ${podeGerir?`<div style="display:flex;gap:5px">
-          <button class="btn-sm sec" style="padding:5px 10px" onclick="modalUsuario(${u.id})">✏️ Editar</button>
-          ${!ehEu?`<button class="btn-sm danger" style="padding:5px 10px" onclick="excluirUsuario(${u.id})">🗑️</button>`:''}
+          <button class="btn-sm sec" style="padding:5px 10px" onclick="modalUsuario('${u.id}')">✏️ Editar</button>
+          ${!ehEu?`<button class="btn-sm danger" style="padding:5px 10px" onclick="excluirUsuario('${u.id}')">🗑️</button>`:''}
         </div>`:''}
       </div>
     </div>`;}).join('')}
@@ -2311,41 +2344,84 @@ function renderUsuarios(){
 /* Modal único para criar OU editar usuário (id opcional) */
 function modalUsuario(id){
   if(!temPerm('usuarios')){toast("Sem permissão para gerir usuários.","err");return;}
-  const u = id?USUARIOS.find(x=>x.id===id):null;
+  const real = STATE.usuario && STATE.usuario.real;
+  const u = id ? usuariosLista().find(x=>String(x.id)===String(id)) : null;
   const isNew=!u;
   const box=document.getElementById('modalBox');
-  box.innerHTML=`<div class="modal-head"><div class="mt">${isNew?'➕ Novo usuário':'✏️ Editar usuário'}</div><button class="modal-x" onclick="fecharModal()">✕</button></div>
+  box.innerHTML=`<div class="modal-head"><div class="mt">${isNew?(real?'➕ Convidar usuário':'➕ Novo usuário'):'✏️ Editar usuário'}</div><button class="modal-x" onclick="fecharModal()">✕</button></div>
   <div class="modal-body">
     <div class="field"><label>Nome completo</label><input id="nuNome" value="${u?u.nome:''}" placeholder="Nome do usuário"></div>
-    <div class="field"><label>Usuário (login)</label><input id="nuUser" value="${u?u.user:''}" placeholder="login.usuario" ${u?'disabled':''}>${u?'<div class="muted" style="margin-top:4px">O login não pode ser alterado.</div>':''}</div>
-    <div class="field"><label>E-mail</label><input id="nuEmail" value="${u?(u.email||''):''}" placeholder="email@empresa.com"></div>
+    <div class="field"><label>E-mail${real?' (login de acesso)':''}</label><input id="nuEmail" value="${u?(u.email||''):''}" placeholder="email@empresa.com" ${(u&&real)?'disabled':''}>${(u&&real)?'<div class="muted" style="margin-top:4px">O e-mail de login não pode ser alterado aqui.</div>':''}</div>
+    ${real?'':`<div class="field"><label>Usuário (login)</label><input id="nuUser" value="${u?u.user:''}" placeholder="login.usuario" ${u?'disabled':''}>${u?'<div class="muted" style="margin-top:4px">O login não pode ser alterado.</div>':''}</div>`}
     <div class="field"><label>Nível de acesso (perfil)</label>
-      <select id="nuPerfil">${Object.entries(PERFIS).map(([k,p])=>`<option value="${k}" ${u&&u.perfil===k?'selected':''}>${p.nome}</option>`).join('')}</select>
+      <select id="nuPerfil" onchange="resetPermsUI()">${Object.entries(PERFIS).map(([k,p])=>`<option value="${k}" ${u?(u.perfil===k?'selected':''):(k==='visualizador'?'selected':'')}>${p.nome}</option>`).join('')}</select>
     </div>
-    <div class="scope-note" id="permPreview" style="margin-bottom:14px"></div>
-    <button class="btn-sm" style="width:100%;justify-content:center" onclick="salvarUsuario(${id||'null'})">💾 ${isNew?'Cadastrar usuário':'Salvar alterações'}</button>
+    ${(real&&!isNew)?`<div class="field" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="nuAtivo" ${u.ativo===false?'':'checked'}><label for="nuAtivo" style="margin:0">Usuário ativo (pode acessar o sistema)</label></div>`:''}
+    <div class="field"><label>Permissões individuais (ajuste por pessoa)</label>
+      <div id="permsBox" style="display:flex;flex-wrap:wrap;gap:6px 14px">
+        ${Object.keys(PERM_LABELS).map(k=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" class="permchk" value="${k}"> ${PERM_LABELS[k]}</label>`).join('')}
+      </div>
+      <div class="muted" style="margin-top:6px">Marcados = liberados para esta pessoa. Trocar o perfil redefine para o padrão do nível.</div>
+    </div>
+    <button class="btn-sm" style="width:100%;justify-content:center" onclick="salvarUsuario(${id?`'${id}'`:'null'})">💾 ${isNew?(real?'Convidar / criar usuário':'Cadastrar usuário'):'Salvar alterações'}</button>
   </div>`;
   document.getElementById('modalBg').classList.add('open');
-  const upd=()=>{const k=document.getElementById('nuPerfil').value;const p=PERFIS[k];
-    document.getElementById('permPreview').innerHTML=`<b>Permissões deste nível:</b> ${p.perms.map(pm=>PERM_LABELS[pm]).join(' • ')}`;};
-  document.getElementById('nuPerfil').addEventListener('change',upd);upd();
+  const perfilSel=document.getElementById('nuPerfil').value;
+  _setPermChecks(u ? _permEfetivo(u.perfil,u.permsAdd,u.permsRemove) : _permEfetivo(perfilSel,[],[]));
 }
-function salvarUsuario(id){
+async function salvarUsuario(id){
   if(!temPerm('usuarios')){toast("Sem permissão.","err");return;}
+  const real = STATE.usuario && STATE.usuario.real;
   const nome=document.getElementById('nuNome').value.trim();
   const email=document.getElementById('nuEmail').value.trim();
   const perfil=document.getElementById('nuPerfil').value;
-  if(id){ // edição
-    const u=USUARIOS.find(x=>x.id===id);
+  const checked=[...document.querySelectorAll('.permchk:checked')].map(c=>c.value);
+  const base=(PERFIS[perfil]||{perms:[]}).perms;
+  const permsAdd=checked.filter(p=>!base.includes(p));
+  const permsRemove=base.filter(p=>!checked.includes(p));
+
+  // ---- MODO REAL (Supabase) ----
+  if(real){
+    try{
+      const sb=sbClient();
+      if(id){ // editar perfil/permissões/ativo
+        if(!nome){toast('Preencha o nome.','err');return;}
+        const ativoEl=document.getElementById('nuAtivo');
+        const upd={nome, perfil, perms_add:permsAdd, perms_remove:permsRemove};
+        if(ativoEl) upd.ativo=ativoEl.checked;
+        const {error}=await sb.from('usuarios').update(upd).eq('id',id);
+        if(error) throw error;
+        toast('Usuário atualizado!','ok');
+        if(String(STATE.usuario.id)===String(id)){ STATE.usuario.perfil=perfil; STATE.usuario.permsAdd=permsAdd; STATE.usuario.permsRemove=permsRemove; aplicarSessao(); }
+      }else{ // convidar/criar via Edge Function
+        if(!email){toast('Informe o e-mail.','err');return;}
+        toast('Criando usuário...','ok');
+        const {data,error}=await sb.functions.invoke('convidar-usuario',{body:{email,nome,perfil,permsAdd,permsRemove}});
+        if(error){ toast('Erro ao convidar: '+error.message,'err'); return; }
+        if(data && data.error){ toast('Erro: '+data.error,'err'); return; }
+        if(data && data.tempPassword){
+          alert('Usuário criado com sucesso.\n\nE-mail: '+email+'\nSenha provisória: '+data.tempPassword+'\n\nRepasse ao usuário e peça para trocar no primeiro acesso.');
+        }else{
+          toast('Convite enviado por e-mail!','ok');
+        }
+      }
+      fecharModal();
+      await usuariosCarregar();
+    }catch(e){ console.warn('salvarUsuario',e); toast('Erro ao salvar no servidor.','err'); }
+    return;
+  }
+
+  // ---- MODO DEMONSTRAÇÃO (em memória) ----
+  if(id){
+    const u=USUARIOS.find(x=>String(x.id)===String(id));
     if(!nome){toast('Preencha o nome.','err');return;}
     const antesPerfil=u.perfil;
     u.nome=nome;u.email=email;u.perfil=perfil;
     logAudit("Usuário editado",nome,`Nível: ${PERFIS[perfil].nome}${antesPerfil!==perfil?` (era ${PERFIS[antesPerfil].nome})`:''}`);
     toast('Usuário atualizado!','ok');
-    // se editei a mim mesmo e mudei o perfil, atualiza a sessão e a navegação
-    if(STATE.usuario.id===id){STATE.usuario=u;aplicarSessao();}
-  }else{ // novo
-    const user=document.getElementById('nuUser').value.trim().toLowerCase();
+    if(String(STATE.usuario.id)===String(id)){STATE.usuario=u;aplicarSessao();}
+  }else{
+    const user=(document.getElementById('nuUser')?.value||'').trim().toLowerCase();
     if(!nome||!user){toast('Preencha nome e usuário.','err');return;}
     if(USUARIOS.find(x=>x.user===user)){toast('Esse login já existe.','err');return;}
     USUARIOS.push({id:Date.now(),user,nome,perfil,email});
@@ -2355,13 +2431,25 @@ function salvarUsuario(id){
   fecharModal();renderChips();
   if(currentPage==='admin')renderAdmin();else renderUsuarios();
 }
-function excluirUsuario(id){
+async function excluirUsuario(id){
   if(!temPerm('usuarios')){toast("Sem permissão.","err");return;}
-  const u=USUARIOS.find(x=>x.id===id);
+  const real = STATE.usuario && STATE.usuario.real;
+  const u=usuariosLista().find(x=>String(x.id)===String(id));
   if(!u)return;
-  if(STATE.usuario.id===id){toast("Você não pode excluir o próprio usuário logado.","err");return;}
+  if(String(STATE.usuario.id)===String(id)){toast("Você não pode desativar/excluir o próprio usuário logado.","err");return;}
+  if(real){
+    if(!confirm(`Desativar o acesso de "${u.nome}" (${u.email||'sem e-mail'})? Ele não conseguirá mais entrar; o histórico é preservado.`))return;
+    try{
+      const sb=sbClient();
+      const {error}=await sb.from('usuarios').update({ativo:false}).eq('id',id);
+      if(error) throw error;
+      toast('Usuário desativado.','ok');
+      await usuariosCarregar();
+    }catch(e){ console.warn('excluirUsuario',e); toast('Erro ao desativar.','err'); }
+    return;
+  }
   if(!confirm(`Excluir o usuário "${u.nome}" (@${u.user})? Esta ação não pode ser desfeita.`))return;
-  USUARIOS=USUARIOS.filter(x=>x.id!==id);
+  USUARIOS=USUARIOS.filter(x=>String(x.id)!==String(id));
   logAudit("Usuário excluído",u.nome,`Nível: ${PERFIS[u.perfil].nome}`);
   toast('Usuário excluído.','ok');
   renderChips();
@@ -2373,6 +2461,7 @@ function excluirUsuario(id){
    ==================================================================== */
 function renderAdmin(){
   const c=document.getElementById('content');
+  if(STATE.usuario && STATE.usuario.real && !STATE.usuariosCarregado){ usuariosCarregar(); }
   c.innerHTML=`
   <div class="page-head"><h3>⚙️ Configurações do Sistema</h3><p>Ative, desative e personalize módulos — visível apenas para Administrador</p></div>
 
@@ -2389,14 +2478,14 @@ function renderAdmin(){
       <div><h4>👥 Usuários e níveis de acesso</h4><div class="sub">Inclua, edite ou remova usuários e defina o perfil de cada um</div></div>
       <button class="btn-sm" onclick="modalUsuario()">➕ Novo usuário</button>
     </div>
-    ${USUARIOS.map(u=>{const p=PERFIS[u.perfil];const ehEu=STATE.usuario&&STATE.usuario.id===u.id;return `<div class="user-row">
+    ${usuariosLista().map(u=>{const p=PERFIS[u.perfil]||PERFIS.visualizador;const ehEu=STATE.usuario&&STATE.usuario.id===u.id;return `<div class="user-row">
       <div class="uav" style="background:${p.cor}">${iniciais(u.nome)}</div>
       <div class="uinfo"><div class="un">${u.nome} ${ehEu?'<span class="perm-tag">você</span>':''}</div><div class="ue">@${u.user} • ${u.email||'sem e-mail'}</div></div>
       <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
         <span class="badge c" style="background:${p.cor}22;color:${p.cor};border-color:${p.cor}55">${p.nome}</span>
         <div style="display:flex;gap:5px">
-          <button class="btn-sm sec" style="padding:5px 10px" onclick="modalUsuario(${u.id})">✏️ Editar</button>
-          ${!ehEu?`<button class="btn-sm danger" style="padding:5px 10px" onclick="excluirUsuario(${u.id})">🗑️</button>`:''}
+          <button class="btn-sm sec" style="padding:5px 10px" onclick="modalUsuario('${u.id}')">✏️ Editar</button>
+          ${!ehEu?`<button class="btn-sm danger" style="padding:5px 10px" onclick="excluirUsuario('${u.id}')">🗑️</button>`:''}
         </div>
       </div>
     </div>`;}).join('')}

@@ -757,11 +757,12 @@ async function aplicarUsuarioReal(sb, user){
   }catch(e){ /* sem perfil ainda: entra como visualizador */ }
   if(!PERFIS[perfil]) perfil='visualizador';
   STATE.usuario={ id:user.id, user:user.email, email:user.email, nome, perfil, permsAdd, permsRemove, real:true };
-  STATE.segCarregado=false; STATE.contratoId=null; STATE.usuariosCarregado=false;
+  STATE.segCarregado=false; STATE.contratoId=null; STATE.usuariosCarregado=false; STATE.platCarregado=false;
   iniciarDadosDemo();
   abrirApp();
   segCarregar();
   usuariosCarregar();
+  platCarregar();
   toast(`Bem-vindo, ${nome.split(' ')[0]}!`,"ok");
 }
 
@@ -857,6 +858,7 @@ function ultimaAtualizacao(){
    PÁGINA: DASHBOARD GERAL
    ==================================================================== */
 function renderDashboard(){
+  if(STATE.usuario&&STATE.usuario.real&&!STATE.platCarregado){platCarregar();}
   const s=stats();
   const c=document.getElementById('content');
   // barra de disponibilidade proporcional
@@ -942,6 +944,7 @@ function renderDashboard(){
    PÁGINA: REGENERADORES — abas + grid de plataformas
    ==================================================================== */
 function renderRegen(){
+  if(STATE.usuario&&STATE.usuario.real&&!STATE.platCarregado){platCarregar();}
   const c=document.getElementById('content');
   const podeAdmin=temPerm('admin');
   c.innerHTML=`
@@ -1021,6 +1024,7 @@ function togglePlataforma(cod){
   p.historico.unshift({data:agora,usuario:STATE.usuario.nome,acao:p.ativo?"Plataforma ativada":"Plataforma desativada",status:null,detalhe:`${p.ativo?'Ativada':'Desativada'} por ${STATE.usuario.nome} em ${fmtDataHora(agora)}.`});
   logAudit(p.ativo?"Plataforma ativada":"Plataforma desativada",`Plataforma ${cod}`,`Por ${STATE.usuario.nome}`);
   toast(`Plataforma ${cod} ${p.ativo?'ativada':'desativada'}.`,"ok");
+  platSalvar(p);
   if(currentPage==='regen'){drawRegenTabs();drawPlatGrid();}
 }
 function excluirPlataforma(cod){
@@ -1028,6 +1032,7 @@ function excluirPlataforma(cod){
   const p=STATE.plataformas.find(x=>x.cod===cod);if(!p)return;
   if(!p.extra){toast("Só plataformas adicionadas manualmente podem ser excluídas. Use 'Desativar' para as demais.","err");return;}
   if(!confirm(`Excluir definitivamente a plataforma ${cod}? Esta ação não pode ser desfeita.`))return;
+  platExcluir(p);
   STATE.plataformas=STATE.plataformas.filter(x=>x.cod!==cod);
   logAudit("Plataforma excluída",`Plataforma ${cod}`,`Por ${STATE.usuario.nome}`);
   toast(`Plataforma ${cod} excluída.`,"ok");
@@ -1067,7 +1072,7 @@ function modalNovaPlataforma(){
   };
   document.getElementById('npRegen').addEventListener('change',sugere);sugere();
 }
-function salvarNovaPlataforma(){
+async function salvarNovaPlataforma(){
   if(!temPerm('admin')){toast("Sem permissão.","err");return;}
   const rid=+document.getElementById('npRegen').value;
   const cod=document.getElementById('npCod').value.trim().toUpperCase();
@@ -1089,6 +1094,7 @@ function salvarNovaPlataforma(){
     historico:[{data:hoje(),usuario:STATE.usuario.nome,acao:"Plataforma criada",status,detalhe:`Plataforma adicionada por ${STATE.usuario.nome}.`}],
     posMapa: { carcaca: posInicialMapa(rid, idx).carcaca }
   };
+  if(STATE.usuario&&STATE.usuario.real){ await platCriar(nova); }
   STATE.plataformas.push(nova);
   logAudit("Plataforma criada",`Plataforma ${cod}`,`${reg.nome} • ${STATUS_MAP[status].label} • por ${STATE.usuario.nome}`);
   toast(`Plataforma ${cod} adicionada!`,"ok");
@@ -1262,6 +1268,75 @@ function drawModalTab(p,podeInsp,podeFoto){
 /* ====================================================================
    AÇÕES DA FICHA
    ==================================================================== */
+/* ===== PLATAFORMAS — persistência real (Supabase) ===== */
+function _reRender(){
+  if(typeof currentPage==='undefined') return;
+  try{
+    var nm={dashboard:'renderDashboard',regen:'renderRegen',mapa:'renderMapa',seguranca:'renderSeguranca',relatorios:'renderRelatorios',historico:'renderHistorico',usuarios:'renderUsuarios',admin:'renderAdmin'}[currentPage];
+    if(nm && typeof window[nm]==='function') window[nm]();
+  }catch(e){ console.warn('_reRender',e); }
+}
+async function platCarregar(){
+  if(!STATE.usuario || !STATE.usuario.real) return;
+  try{
+    const sb=sbClient();
+    const {data:regs}=await sb.from('regeneradores').select('id,num,nome').is('excluido_em',null);
+    STATE.regMap={}; const info={};
+    (regs||[]).forEach(r=>{ info[r.id]={num:r.num,nome:r.nome}; STATE.regMap[r.num]=r.id; });
+    const {data,error}=await sb.from('plataformas').select('*').is('excluido_em',null).limit(3000);
+    if(error) throw error;
+    if(!data || !data.length) return; // segurança: se vier vazio, mantém os dados atuais
+    STATE.plataformas=data.map(p=>{
+      const r=info[p.regenerador_id]||{num:0,nome:'—'};
+      return { dbId:p.id, cod:p.codigo, regen:r.num, regenNome:r.nome,
+        status:p.status, inspecionada:!!p.inspecionada, ativo:p.ativo!==false, extra:!!p.extra,
+        ultInspecao:p.ult_inspecao, proxInspecao:p.prox_inspecao,
+        responsavel:p.responsavel, obs:p.obs||'',
+        checklist:p.checklist||{}, historico:p.historico||[], fotos:[],
+        posMapa:p.pos_mapa||{} };
+    });
+    STATE.platCarregado=true;
+    _reRender();
+  }catch(e){ console.warn('platCarregar',e); }
+}
+async function platSalvar(p){
+  if(!STATE.usuario || !STATE.usuario.real || !p || !p.dbId) return;
+  try{
+    const sb=sbClient();
+    await sb.from('plataformas').update({
+      status:p.status, inspecionada:!!p.inspecionada, ativo:p.ativo!==false,
+      ult_inspecao:p.ultInspecao||null, prox_inspecao:p.proxInspecao||null,
+      responsavel:p.responsavel||null, obs:p.obs||null,
+      checklist:p.checklist||{}, historico:p.historico||[], pos_mapa:p.posMapa||{},
+      updated_by:STATE.usuario.id
+    }).eq('id',p.dbId);
+  }catch(e){ console.warn('platSalvar',e); }
+}
+async function platSalvarVarios(lista){ for(const p of (lista||[])){ await platSalvar(p); } }
+async function platExcluir(p){
+  if(!STATE.usuario || !STATE.usuario.real || !p || !p.dbId) return;
+  try{ const sb=sbClient(); await sb.from('plataformas').update({excluido_em:new Date().toISOString()}).eq('id',p.dbId); }
+  catch(e){ console.warn('platExcluir',e); }
+}
+async function platCriar(nova){
+  if(!STATE.usuario || !STATE.usuario.real) return;
+  try{
+    const sb=sbClient();
+    if(!STATE.contratoId) await segGarantirContrato(sb);
+    const regId=(STATE.regMap||{})[nova.regen];
+    if(!regId){ toast("Regenerador não encontrado no banco.","err"); return; }
+    const {data,error}=await sb.from('plataformas').insert({
+      regenerador_id:regId, contrato_id:STATE.contratoId, codigo:nova.cod,
+      status:nova.status, inspecionada:!!nova.inspecionada, ativo:true, extra:true,
+      ult_inspecao:nova.ultInspecao||null, prox_inspecao:nova.proxInspecao||null,
+      responsavel:nova.responsavel||null, obs:nova.obs||null,
+      checklist:nova.checklist||{}, historico:nova.historico||[], pos_mapa:nova.posMapa||{},
+      created_by:STATE.usuario.id
+    }).select('id').single();
+    if(error) throw error;
+    nova.dbId=data.id;
+  }catch(e){ console.warn('platCriar',e); toast("Erro ao salvar a nova plataforma no servidor.","err"); }
+}
 function setStatus(novo){
   const p=STATE.platAtual;
   p.status=novo;
@@ -1295,6 +1370,7 @@ function salvarInspecao(){
   // auditoria global
   logAudit("Inspeção salva", `Plataforma ${p.cod}`, `Status: ${STATUS_MAP[p.status].label}${nc.length?' • NC: '+nc.join(', '):''}`);
   toast(`Inspeção da ${p.cod} salva com sucesso!`,"ok");
+  platSalvar(p);
   drawModal();
 }
 
@@ -1386,6 +1462,7 @@ function baixarQR(cod){
    Suporta drag-and-drop: mover individual ou regenerador inteiro.
    ==================================================================== */
 function renderMapa(){
+  if(STATE.usuario&&STATE.usuario.real&&!STATE.platCarregado){platCarregar();}
   const c=document.getElementById('content');
   const podeEditar=temPerm('mapa_edit');
   const mapaInfo=CONFIG.mapas.find(m=>m.id===STATE.mapaAtivo);
@@ -1469,6 +1546,7 @@ function marcarNoMapa(){
   const nome=CONFIG.mapas.find(m=>m.id===STATE.mapaAtivo).nome;
   logAudit("Plataforma marcada no mapa",`Plataforma ${cod}`,`Marcada em ${nome}. Arraste para a posição correta.`);
   toast(`Plataforma ${cod} marcada em ${nome}. Arraste para posicionar.`,"ok");
+  platSalvar(p);
   renderMapa();
 }
 /* Remove a marcação da plataforma somente do mapa atual (não exclui a plataforma) */
@@ -1480,6 +1558,7 @@ function removerDoMapa(cod){
   delete p.posMapa[STATE.mapaAtivo];
   logAudit("Plataforma removida do mapa",`Plataforma ${cod}`,`Retirada de ${nome}.`);
   toast(`Plataforma ${cod} removida deste mapa.`,"ok");
+  platSalvar(p);
   renderMapa();
 }
 function resetPosicoes(){
@@ -1502,6 +1581,7 @@ function resetPosicoes(){
     logAudit("Marcações do mapa removidas",nome,"Todas as marcações deste mapa foram limpas.");
     toast("Marcações removidas deste mapa.","ok");
   }
+  if(STATE.usuario&&STATE.usuario.real){ platSalvarVarios(STATE.plataformas.slice()); }
   renderMapa();
 }
 function carregarMapa(ev){
@@ -1629,6 +1709,7 @@ function pinPointerUp(ev){
       const p=STATE.plataformas.find(z=>z.cod===cod);
       if(!p.posMapa)p.posMapa={};
       p.posMapa[mapaId]={x,y};
+      platSalvar(p);
     };
     if(_dragState.grupo){
       _dragState.grupoPlats.forEach(g=>persistir(g.cod));

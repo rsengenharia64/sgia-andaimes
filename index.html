@@ -704,7 +704,7 @@ function sbClient(){
 function iniciarDadosDemo(){
   if(STATE.plataformas.length===0){
     STATE.plataformas=gerarPlataformas();
-    STATE.ocorrencias=gerarOcorrencias();
+    STATE.ocorrencias=(STATE.usuario&&STATE.usuario.real)?[]:gerarOcorrencias();
     STATE.mapaImgs.carcaca = IMG_CARCACA;
     STATE.mapaImgs.camara  = IMG_CAMARA;
     STATE.auditoria=[{id:uid(),data:hoje(),usuario:"Sistema",perfil:"—",acao:"Carga inicial",alvo:"Sistema",detalhe:`${STATE.plataformas.length} plataformas cadastradas nos ${CONFIG.regeneradores.length} regeneradores.`}];
@@ -757,8 +757,10 @@ async function aplicarUsuarioReal(sb, user){
   }catch(e){ /* sem perfil ainda: entra como visualizador */ }
   if(!PERFIS[perfil]) perfil='visualizador';
   STATE.usuario={ id:user.id, user:user.email, email:user.email, nome, perfil, permsAdd, permsRemove, real:true };
+  STATE.segCarregado=false; STATE.contratoId=null;
   iniciarDadosDemo();
   abrirApp();
+  segCarregar();
   toast(`Bem-vindo, ${nome.split(' ')[0]}!`,"ok");
 }
 
@@ -1648,7 +1650,32 @@ const SIT_MAP={aberta:{label:"Aberta",cls:"aberta"},andamento:{label:"Em andamen
 function catNome(id){const c=CONFIG.categoriasSeguranca.find(x=>x.id===id);return c?c.nome:id;}
 function catIc(id){const c=CONFIG.categoriasSeguranca.find(x=>x.id===id);return c?c.ic:"📋";}
 
+/* ===== SEGURANÇA — persistência real (Supabase) ===== */
+function _ocDbToApp(r){
+  return { id:r.id, data:r.data, categoria:r.categoria, situacao:r.situacao,
+    local:r.local, descricao:r.descricao, acaoCorretiva:r.acao_corretiva,
+    acaoResponsavel:r.acao_responsavel, autor:r.autor, responsavel:r.autor||'—', fotos:[] };
+}
+async function segGarantirContrato(sb){
+  if(STATE.contratoId) return;
+  const {data}=await sb.from('contratos').select('id').is('excluido_em',null).order('created_at').limit(1);
+  if(data && data[0]) STATE.contratoId=data[0].id;
+}
+async function segCarregar(){
+  if(!STATE.usuario || !STATE.usuario.real) return;
+  try{
+    const sb=sbClient();
+    await segGarantirContrato(sb);
+    const {data,error}=await sb.from('ocorrencias_seguranca').select('*')
+      .is('excluido_em',null).order('data',{ascending:false}).limit(500);
+    if(error) throw error;
+    STATE.ocorrencias=(data||[]).map(_ocDbToApp);
+    STATE.segCarregado=true;
+    if(typeof currentPage!=='undefined' && currentPage==='seguranca') renderSeguranca();
+  }catch(e){ console.warn('segCarregar',e); }
+}
 function renderSeguranca(){
+  if(STATE.usuario && STATE.usuario.real && !STATE.segCarregado){ segCarregar(); }
   const c=document.getElementById('content');
   const podeReg=temPerm('seguranca');
   const total=STATE.ocorrencias.length;
@@ -1784,7 +1811,7 @@ function delFotoOcorrencia(id){
   const alvo=getOcFotos();const i=alvo.findIndex(f=>f.id===id);
   if(i>=0){alvo.splice(i,1);drawOcorrenciaModal(STATE.segAtual);toast("Foto removida.","ok");}
 }
-function salvarOcorrencia(isNew){
+async function salvarOcorrencia(isNew){
   if(!temPerm('seguranca')){toast("Sem permissão.","err");return;}
   const cat=document.getElementById('ocCat').value;
   const sit=document.getElementById('ocSit').value;
@@ -1794,6 +1821,37 @@ function salvarOcorrencia(isNew){
   const autor=(document.getElementById('ocAutor')?.value||'').trim();
   const acaoResp=(document.getElementById('ocAcaoResp')?.value||'').trim();
   if(!desc){toast("Descreva a ocorrência.","err");return;}
+
+  // ---- MODO REAL: grava no Supabase ----
+  if(STATE.usuario && STATE.usuario.real){
+    try{
+      const sb=sbClient();
+      await segGarantirContrato(sb);
+      if(!STATE.contratoId){toast("Nenhum contrato disponível para vincular.","err");return;}
+      if(isNew){
+        const {error}=await sb.from('ocorrencias_seguranca').insert({
+          contrato_id:STATE.contratoId, categoria:cat, situacao:sit, local, descricao:desc,
+          acao_corretiva:acao, acao_responsavel:acaoResp, autor:autor||STATE.usuario.nome,
+          registrado_por_id:STATE.usuario.id, created_by:STATE.usuario.id, updated_by:STATE.usuario.id
+        });
+        if(error) throw error;
+        toast("Ocorrência registrada!","ok");
+      }else{
+        const {error}=await sb.from('ocorrencias_seguranca').update({
+          categoria:cat, situacao:sit, local, descricao:desc, acao_corretiva:acao,
+          acao_responsavel:acaoResp, autor:autor, updated_by:STATE.usuario.id
+        }).eq('id', STATE.segAtual.id);
+        if(error) throw error;
+        toast("Ocorrência atualizada!","ok");
+      }
+      _ocFotosTmp=null;
+      fecharModal();
+      await segCarregar();
+    }catch(e){ console.warn('salvarOcorrencia',e); toast("Erro ao salvar no servidor. Tente de novo.","err"); }
+    return;
+  }
+
+  // ---- MODO DEMONSTRAÇÃO: em memória (comportamento original) ----
   if(isNew){
     STATE.ocorrencias.unshift({id:uid(),data:hoje(),categoria:cat,situacao:sit,local,descricao:desc,acaoCorretiva:acao,acaoResponsavel:acaoResp,autor:autor||STATE.usuario.nome,responsavel:STATE.usuario.nome,fotos:_ocFotosTmp||[]});
     _ocFotosTmp=null;

@@ -2564,6 +2564,20 @@ function modalUsuario(id){
     <div class="field"><label>Nome completo</label><input id="nuNome" value="${u?u.nome:''}" placeholder="Nome do usuário"></div>
     <div class="field"><label>E-mail${real?' (login de acesso)':''}</label><input id="nuEmail" value="${u?(u.email||''):''}" placeholder="email@empresa.com" ${(u&&real)?'disabled':''}>${(u&&real)?'<div class="muted" style="margin-top:4px">O e-mail de login não pode ser alterado aqui.</div>':''}</div>
     ${real?'':`<div class="field"><label>Usuário (login)</label><input id="nuUser" value="${u?u.user:''}" placeholder="login.usuario" ${u?'disabled':''}>${u?'<div class="muted" style="margin-top:4px">O login não pode ser alterado.</div>':''}</div>`}
+    ${(real&&isNew)?`
+    <div class="field"><label>Forma de acesso</label>
+      <select id="nuModo" onchange="document.getElementById('nuSenhaBox').style.display=(this.value==='senha'?'block':'none')">
+        <option value="senha" selected>Senha definida pelo administrador (recomendado)</option>
+        <option value="convite">Convite por e-mail (requer configuração de e-mail)</option>
+      </select></div>
+    <div class="field" id="nuSenhaBox">
+      <label>Senha do primeiro acesso</label>
+      <div style="display:flex;gap:8px">
+        <input id="nuSenha" placeholder="mínimo 6 caracteres">
+        <button class="btn-sm sec" type="button" onclick="document.getElementById('nuSenha').value='Sgia@'+Math.random().toString(36).slice(2,8)">Gerar</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px"><input type="checkbox" id="nuForcar" checked> Exigir que o usuário troque a senha no primeiro acesso</label>
+    </div>`:''}
     <div class="field"><label>Nível de acesso (perfil)</label>
       <select id="nuPerfil" onchange="resetPermsUI()">${Object.entries(PERFIS).map(([k,p])=>`<option value="${k}" ${u?(u.perfil===k?'selected':''):(k==='visualizador'?'selected':'')}>${p.nome}</option>`).join('')}</select>
     </div>
@@ -2574,11 +2588,35 @@ function modalUsuario(id){
       </div>
       <div class="muted" style="margin-top:6px">Marcados = liberados para esta pessoa. Trocar o perfil redefine para o padrão do nível.</div>
     </div>
+    ${(real&&!isNew)?`
+    <div class="field" style="border-top:1px solid var(--line);padding-top:12px;margin-top:4px">
+      <label>Redefinir senha de acesso</label>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="nuResetSenha" placeholder="nova senha (mín. 6)">
+        <button class="btn-sm sec" type="button" onclick="document.getElementById('nuResetSenha').value='Sgia@'+Math.random().toString(36).slice(2,8)">Gerar</button>
+        <button class="btn-sm" type="button" onclick="resetarSenhaUsuario('${id}')">🔑 Aplicar</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px"><input type="checkbox" id="nuResetForcar" checked> Exigir troca no próximo acesso</label>
+    </div>`:''}
     <button class="btn-sm" style="width:100%;justify-content:center" onclick="salvarUsuario(${id?`'${id}'`:'null'})">💾 ${isNew?(real?'Convidar / criar usuário':'Cadastrar usuário'):'Salvar alterações'}</button>
   </div>`;
   document.getElementById('modalBg').classList.add('open');
   const perfilSel=document.getElementById('nuPerfil').value;
   _setPermChecks(u ? _permEfetivo(u.perfil,u.permsAdd,u.permsRemove) : _permEfetivo(perfilSel,[],[]));
+}
+async function resetarSenhaUsuario(id){
+  if(!temPerm('usuarios')){toast("Sem permissão.","err");return;}
+  const s=((document.getElementById('nuResetSenha')||{}).value||'').trim();
+  if(s.length<6){toast('Defina uma senha de pelo menos 6 caracteres.','err');return;}
+  const forcar=(document.getElementById('nuResetForcar')||{}).checked!==false;
+  try{
+    const sb=sbClient();
+    const {data,error}=await sb.functions.invoke('convidar-usuario',{body:{acao:'reset',id:id,senha:s,forcarTroca:forcar}});
+    if(error){ toast('Erro: '+error.message,'err'); return; }
+    if(data && data.error){ toast('Erro: '+data.error,'err'); return; }
+    alert('Senha redefinida com sucesso.\n\nNova senha: '+(data.tempPassword||s)+'\n\nRepasse ao usuário.'+(forcar?' Ele será obrigado a trocá-la no próximo acesso.':''));
+    toast('Senha redefinida.','ok');
+  }catch(e){ console.warn('resetarSenha',e); toast('Erro ao redefinir a senha.','err'); }
 }
 async function salvarUsuario(id){
   if(!temPerm('usuarios')){toast("Sem permissão.","err");return;}
@@ -2606,11 +2644,12 @@ async function salvarUsuario(id){
         if(String(STATE.usuario.id)===String(id)){ STATE.usuario.perfil=perfil; STATE.usuario.permsAdd=permsAdd; STATE.usuario.permsRemove=permsRemove; aplicarSessao(); }
       }else{ // convidar/criar via Edge Function
         if(!email){toast('Informe o e-mail.','err');return;}
-        const modoEl=document.getElementById('nuModo'); const modo=modoEl?modoEl.value:'convite';
+        const modoEl=document.getElementById('nuModo'); const modo=modoEl?modoEl.value:'senha';
         const senhaEl=document.getElementById('nuSenha'); const senha=senhaEl?senhaEl.value.trim():'';
-        if(modo==='senha' && senha.length<6){toast('Defina uma senha provisória de pelo menos 6 caracteres.','err');return;}
+        const forcarEl=document.getElementById('nuForcar'); const forcarTroca=forcarEl?forcarEl.checked:true;
+        if(modo==='senha' && senha.length<6){toast('Defina uma senha de pelo menos 6 caracteres.','err');return;}
         toast('Criando usuário...','ok');
-        const {data,error}=await sb.functions.invoke('convidar-usuario',{body:{email,nome,perfil,permsAdd,permsRemove,modo,senha}});
+        const {data,error}=await sb.functions.invoke('convidar-usuario',{body:{email,nome,perfil,permsAdd,permsRemove,modo,senha,forcarTroca}});
         if(error){ toast('Erro ao criar: '+error.message,'err'); return; }
         if(data && data.error){ toast('Erro: '+data.error,'err'); return; }
         if(data && data.tempPassword){

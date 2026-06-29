@@ -730,6 +730,36 @@ function abrirPlataformaPendente(){
 }
 
 /* ===== LOGIN REAL (Supabase Auth) ===== */
+function pedirTrocaSenha(){
+  const box=document.getElementById('modalBox');
+  box.innerHTML=`<div class="modal-head"><div class="mt">🔑 Defina sua nova senha</div></div>
+  <div class="modal-body">
+    <p class="muted" style="margin-bottom:12px">Primeiro acesso: por segurança, troque a senha provisória antes de continuar.</p>
+    <div class="field"><label>Nova senha</label><input type="password" id="tsNova" placeholder="mínimo 6 caracteres"></div>
+    <div class="field"><label>Confirmar nova senha</label><input type="password" id="tsConf" placeholder="repita a senha"></div>
+    <button class="btn" style="width:100%;justify-content:center" onclick="trocarSenhaObrigatoria()">Salvar nova senha e entrar</button>
+  </div>`;
+  document.getElementById('login').style.display='none';
+  document.getElementById('app').style.display='flex';
+  document.getElementById('modalBg').classList.add('open');
+}
+async function trocarSenhaObrigatoria(){
+  const s1=(document.getElementById('tsNova')||{}).value||'';
+  const s2=(document.getElementById('tsConf')||{}).value||'';
+  if(s1.length<6){toast('A senha precisa ter ao menos 6 caracteres.','err');return;}
+  if(s1!==s2){toast('As senhas não conferem.','err');return;}
+  try{
+    const sb=sbClient();
+    const {error}=await sb.auth.updateUser({password:s1});
+    if(error) throw error;
+    await sb.from('usuarios').update({senha_provisoria:false}).eq('id',STATE.usuario.id);
+    fecharModal();
+    STATE.segCarregado=false; STATE.contratoId=null; STATE.usuariosCarregado=false; STATE.platCarregado=false; STATE.mapaCarregado=false;
+    iniciarDadosDemo(); abrirApp();
+    segCarregar(); usuariosCarregar(); platCarregar(); mapaCarregar();
+    toast('Senha alterada! Bem-vindo.','ok');
+  }catch(e){ console.warn('trocarSenha',e); toast('Erro ao alterar a senha. Tente de novo.','err'); }
+}
 async function doLoginReal(){
   const email=document.getElementById('loginUser').value.trim();
   const senha=document.getElementById('loginPass').value;
@@ -745,24 +775,27 @@ async function doLoginReal(){
 
 /* Monta STATE.usuario a partir do perfil real no banco */
 async function aplicarUsuarioReal(sb, user){
-  let perfil='visualizador', nome=(user.email||'Usuário'), permsAdd=[], permsRemove=[];
+  let perfil='visualizador', nome=(user.email||'Usuário'), permsAdd=[], permsRemove=[], senhaProv=false;
   try{
     const {data:u}=await sb.from('usuarios')
-      .select('nome,perfil,perms_add,perms_remove,ativo').eq('id',user.id).single();
+      .select('nome,perfil,perms_add,perms_remove,ativo,senha_provisoria').eq('id',user.id).single();
     if(u){
       if(u.ativo===false){ toast("Usuário inativo. Procure o administrador.","err"); await sb.auth.signOut(); return; }
       perfil=u.perfil||perfil; nome=u.nome||nome;
       permsAdd=u.perms_add||[]; permsRemove=u.perms_remove||[];
+      senhaProv=!!u.senha_provisoria;
     }
   }catch(e){ /* sem perfil ainda: entra como visualizador */ }
   if(!PERFIS[perfil]) perfil='visualizador';
   STATE.usuario={ id:user.id, user:user.email, email:user.email, nome, perfil, permsAdd, permsRemove, real:true };
+  if(senhaProv){ pedirTrocaSenha(); return; }
   STATE.segCarregado=false; STATE.contratoId=null; STATE.usuariosCarregado=false; STATE.platCarregado=false;
   iniciarDadosDemo();
   abrirApp();
   segCarregar();
   usuariosCarregar();
   platCarregar();
+  mapaCarregar();
   toast(`Bem-vindo, ${nome.split(' ')[0]}!`,"ok");
 }
 
@@ -1524,6 +1557,7 @@ function baixarQR(cod){
    ==================================================================== */
 function renderMapa(){
   if(STATE.usuario&&STATE.usuario.real&&!STATE.platCarregado){platCarregar();}
+  if(STATE.usuario&&STATE.usuario.real&&!STATE.mapaCarregado){STATE.mapaCarregado=true;mapaCarregar();}
   const c=document.getElementById('content');
   const podeEditar=temPerm('mapa_edit');
   const mapaInfo=CONFIG.mapas.find(m=>m.id===STATE.mapaAtivo);
@@ -1645,23 +1679,49 @@ function resetPosicoes(){
   if(STATE.usuario&&STATE.usuario.real){ platSalvarVarios(STATE.plataformas.slice()); }
   renderMapa();
 }
-function carregarMapa(ev){
+async function carregarMapa(ev){
   const f=ev.target.files[0];if(!f)return;
-  const r=new FileReader();
-  r.onload=e=>{
-    const img=new Image();
-    img.onload=()=>{
-      const max=1100,sc=Math.min(1,max/img.width);
-      const cv=document.createElement('canvas');cv.width=img.width*sc;cv.height=img.height*sc;
-      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
-      STATE.mapaImgs[STATE.mapaAtivo]=cv.toDataURL('image/jpeg',0.78);
-      const nome=CONFIG.mapas.find(m=>m.id===STATE.mapaAtivo).nome;
-      logAudit("Imagem do mapa atualizada",nome,"Nova imagem carregada.");
-      toast("Imagem do mapa atualizada!","ok");drawMapa();
-    };
-    img.src=e.target.result;
-  };
-  r.readAsDataURL(f);
+  const mapaId=STATE.mapaAtivo;
+  const nome=CONFIG.mapas.find(m=>m.id===mapaId).nome;
+  try{
+    const bmp=await createImageBitmap(f);
+    const max=1400,sc=Math.min(1,max/bmp.width);
+    const cv=document.createElement('canvas');cv.width=Math.round(bmp.width*sc);cv.height=Math.round(bmp.height*sc);
+    cv.getContext('2d').drawImage(bmp,0,0,cv.width,cv.height);
+    STATE.mapaImgs[mapaId]=cv.toDataURL('image/jpeg',0.8);  // exibe já
+    drawMapa();
+    if(STATE.usuario && STATE.usuario.real){
+      const sb=sbClient();
+      if(!STATE.contratoId) await segGarantirContrato(sb);
+      const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.8));
+      const path=STATE.contratoId+'/mapa/'+mapaId+'.jpg';
+      const up=await sb.storage.from('sgia-imagens').upload(path,blob,{contentType:'image/jpeg',upsert:true});
+      if(up.error) throw up.error;
+      await sb.from('mapa_bg').upsert({contrato_id:STATE.contratoId, mapa_id:mapaId, path:path, updated_by:STATE.usuario.id, updated_at:new Date().toISOString()},{onConflict:'contrato_id,mapa_id'});
+      const {data:sg}=await sb.storage.from('sgia-imagens').createSignedUrl(path,3600);
+      if(sg&&sg.signedUrl){ STATE.mapaImgs[mapaId]=sg.signedUrl; }
+    }
+    logAudit("Imagem do mapa atualizada",nome,"Nova imagem carregada.");
+    toast("Imagem do mapa atualizada!","ok"); drawMapa();
+  }catch(e){
+    console.warn('carregarMapa',e);
+    toast(STATE.usuario&&STATE.usuario.real?"Imagem exibida, mas houve erro ao salvar no servidor.":"Erro ao carregar imagem.","err");
+  }
+}
+/* Carrega as imagens de fundo personalizadas (modo real) */
+async function mapaCarregar(){
+  if(!STATE.usuario || !STATE.usuario.real) return;
+  try{
+    const sb=sbClient();
+    if(!STATE.contratoId) await segGarantirContrato(sb);
+    const {data}=await sb.from('mapa_bg').select('mapa_id,path');
+    for(const r of (data||[])){
+      if(!r.path) continue;
+      const {data:sg}=await sb.storage.from('sgia-imagens').createSignedUrl(r.path,3600);
+      if(sg&&sg.signedUrl){ STATE.mapaImgs[r.mapa_id]=sg.signedUrl; }
+    }
+    if(typeof currentPage!=='undefined' && currentPage==='mapa') drawMapa();
+  }catch(e){ console.warn('mapaCarregar',e); }
 }
 function posDe(p){
   if(p.posMapa && p.posMapa[STATE.mapaAtivo]) return p.posMapa[STATE.mapaAtivo];
@@ -2546,9 +2606,12 @@ async function salvarUsuario(id){
         if(String(STATE.usuario.id)===String(id)){ STATE.usuario.perfil=perfil; STATE.usuario.permsAdd=permsAdd; STATE.usuario.permsRemove=permsRemove; aplicarSessao(); }
       }else{ // convidar/criar via Edge Function
         if(!email){toast('Informe o e-mail.','err');return;}
+        const modoEl=document.getElementById('nuModo'); const modo=modoEl?modoEl.value:'convite';
+        const senhaEl=document.getElementById('nuSenha'); const senha=senhaEl?senhaEl.value.trim():'';
+        if(modo==='senha' && senha.length<6){toast('Defina uma senha provisória de pelo menos 6 caracteres.','err');return;}
         toast('Criando usuário...','ok');
-        const {data,error}=await sb.functions.invoke('convidar-usuario',{body:{email,nome,perfil,permsAdd,permsRemove}});
-        if(error){ toast('Erro ao convidar: '+error.message,'err'); return; }
+        const {data,error}=await sb.functions.invoke('convidar-usuario',{body:{email,nome,perfil,permsAdd,permsRemove,modo,senha}});
+        if(error){ toast('Erro ao criar: '+error.message,'err'); return; }
         if(data && data.error){ toast('Erro: '+data.error,'err'); return; }
         if(data && data.tempPassword){
           alert('Usuário criado com sucesso.\n\nE-mail: '+email+'\nSenha provisória: '+data.tempPassword+'\n\nRepasse ao usuário e peça para trocar no primeiro acesso.');

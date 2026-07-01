@@ -796,6 +796,7 @@ async function aplicarUsuarioReal(sb, user){
   usuariosCarregar();
   platCarregar();
   mapaCarregar();
+  configCarregar();
   toast(`Bem-vindo, ${nome.split(' ')[0]}!`,"ok");
 }
 
@@ -2088,7 +2089,9 @@ function renderMapaCanvas(mapaId){
     const src=STATE.mapaImgs[mapaId];
     if(!src){resolve(null);return;}
     const img=new Image();
+    img.crossOrigin='anonymous';
     img.onload=()=>{
+      try{
       const cv=document.createElement('canvas');
       cv.width=img.width; cv.height=img.height;
       const ctx=cv.getContext('2d');
@@ -2109,6 +2112,7 @@ function renderMapaCanvas(mapaId){
         ctx.fillText(p.cod,x,yy);
       });
       resolve({dataUrl:cv.toDataURL('image/jpeg',0.82), w:img.width, h:img.height});
+      }catch(e){ console.warn('renderMapaCanvas',e); resolve(null); }
     };
     img.onerror=()=>resolve(null);
     img.src=src;
@@ -2789,12 +2793,41 @@ function toggleModulo(id,on){
   logAudit(on?"Módulo ativado":"Módulo desativado",m.nome,"");
   toast(`${m.nome} ${on?'ativado':'desativado'}.`,"ok");
   buildNav();
+  if(STATE.usuario && STATE.usuario.real) configSalvar();
+}
+async function configSalvar(){
+  if(!STATE.usuario || !STATE.usuario.real) return;
+  try{
+    const sb=sbClient();
+    if(!STATE.contratoId) await segGarantirContrato(sb);
+    if(!STATE.contratoId) return;
+    const modulos={}; CONFIG.modulos.forEach(m=>modulos[m.id]=m.on);
+    const dados={ empresa:CONFIG.empresa, cliente:CONFIG.cliente, prazoInspecaoDias:CONFIG.prazoInspecaoDias, modulos };
+    await sb.from('config_app').upsert({contrato_id:STATE.contratoId, dados, updated_by:STATE.usuario.id, updated_at:new Date().toISOString()},{onConflict:'contrato_id'});
+  }catch(e){ console.warn('configSalvar',e); }
+}
+async function configCarregar(){
+  if(!STATE.usuario || !STATE.usuario.real) return;
+  try{
+    const sb=sbClient();
+    const {data}=await sb.from('config_app').select('dados').limit(1);
+    const d=data && data[0] && data[0].dados;
+    if(d){
+      if(d.empresa!=null) CONFIG.empresa=d.empresa;
+      if(d.cliente!=null) CONFIG.cliente=d.cliente;
+      if(d.prazoInspecaoDias!=null) CONFIG.prazoInspecaoDias=d.prazoInspecaoDias;
+      if(d.modulos){ CONFIG.modulos.forEach(m=>{ if(d.modulos[m.id]!==undefined && !m.fixo) m.on=d.modulos[m.id]; }); }
+      buildNav();
+      if(typeof currentPage!=='undefined' && currentPage==='admin') renderAdmin();
+    }
+  }catch(e){ console.warn('configCarregar',e); }
 }
 function salvarConfig(){
   CONFIG.empresa=document.getElementById('cfgEmpresa').value;
   CONFIG.cliente=document.getElementById('cfgCliente').value;
   CONFIG.prazoInspecaoDias=+document.getElementById('cfgPrazo').value||7;
   logAudit("Parâmetros alterados","Configurações","");
+  if(STATE.usuario && STATE.usuario.real) configSalvar();
   toast("Parâmetros salvos!","ok");
 }
 

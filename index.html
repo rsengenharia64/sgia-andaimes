@@ -2345,7 +2345,23 @@ async function gerarPDFgeral(){
 }
 
 /* ===== RELATÓRIO EXCLUSIVO DE FOTOS (item 4) ===== */
-function gerarPDFfotos(){
+/* Carrega uma imagem (URL assinada ou base64) e devolve base64 JPEG p/ embutir no PDF */
+function imgParaDataUrl(src){
+  return new Promise((resolve)=>{
+    if(!src){resolve(null);return;}
+    if(String(src).startsWith('data:')){resolve(src);return;}
+    const img=new Image(); img.crossOrigin='anonymous';
+    img.onload=()=>{ try{
+      const cv=document.createElement('canvas'); cv.width=img.naturalWidth||img.width; cv.height=img.naturalHeight||img.height;
+      cv.getContext('2d').drawImage(img,0,0);
+      resolve(cv.toDataURL('image/jpeg',0.82));
+    }catch(e){ resolve(null); } };
+    img.onerror=()=>resolve(null);
+    img.src=src;
+  });
+}
+async function gerarPDFfotos(){
+  toast('Gerando relatório de fotos...','ok');
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF();const W=210;let y=38;
   const regSel=document.getElementById('repFotoRegen').value;
@@ -2379,13 +2395,16 @@ function gerarPDFfotos(){
     pdfFooter(doc);doc.save('SGIA_fotos.pdf');toast('Sem fotos para esse filtro.','err');return;
   }
 
+  // pré-carrega as imagens (URLs assinadas -> base64) para embutir no PDF
+  const _cache={};
+  for(const it of itens){ if(it.foto.src && !_cache[it.foto.src]) _cache[it.foto.src]=await imgParaDataUrl(it.foto.src); }
   // grid 2 colunas de fotos com legenda
   const colW=88, imgH=62, gapX=10;
   let col=0, startX=14;
   itens.forEach(it=>{
     if(y+imgH+22>285){doc.addPage();y=20;}
     const x=startX+col*(colW+gapX);
-    try{doc.addImage(it.foto.src,'JPEG',x,y,colW,imgH);}catch(e){doc.rect(x,y,colW,imgH);}
+    const _du=_cache[it.foto.src]; if(_du){ try{doc.addImage(_du,'JPEG',x,y,colW,imgH);}catch(e){doc.rect(x,y,colW,imgH);} } else { doc.rect(x,y,colW,imgH); }
     doc.setDrawColor(210);doc.rect(x,y,colW,imgH);
     let ty=y+imgH+5;
     doc.setFontSize(9);doc.setFont(undefined,'bold');doc.setTextColor(33);
@@ -2405,7 +2424,8 @@ function gerarPDFfotos(){
 }
 
 /* ===== RELATÓRIO DE SEGURANÇA (item 8) ===== */
-function gerarPDFseguranca(){
+async function gerarPDFseguranca(){
+  toast('Gerando relatório de segurança...','ok');
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF();const W=210;let y=38;
   const catSel=document.getElementById('repSegCat').value;
@@ -2419,6 +2439,10 @@ function gerarPDFseguranca(){
   if(de) lista=lista.filter(o=>new Date(o.data)>=new Date(de+'T00:00:00'));
   if(ate) lista=lista.filter(o=>new Date(o.data)<=new Date(ate+'T23:59:59'));
   lista.sort((a,b)=>new Date(b.data)-new Date(a.data));
+
+  // pré-carrega as fotos das ocorrências (URLs assinadas -> base64)
+  const _cache={};
+  for(const o of lista){ for(const f of (o.fotos||[]).slice(0,4)){ if(f.src && !_cache[f.src]) _cache[f.src]=await imgParaDataUrl(f.src); } }
 
   pdfHeader(doc,'Relatório de Segurança do Trabalho');
   doc.setFontSize(14);doc.setFont(undefined,'bold');doc.text('Relatório de Segurança',14,y);y+=4;
@@ -2456,7 +2480,7 @@ function gerarPDFseguranca(){
       if(y+44>285){doc.addPage();y=20;}
       let fx=16;
       o.fotos.slice(0,4).forEach(f=>{
-        try{doc.addImage(f.src,'JPEG',fx,y,40,40);}catch(e){doc.rect(fx,y,40,40);}
+        const _du=_cache[f.src]; if(_du){ try{doc.addImage(_du,'JPEG',fx,y,40,40);}catch(e){doc.rect(fx,y,40,40);} } else { doc.rect(fx,y,40,40); }
         doc.setDrawColor(210);doc.rect(fx,y,40,40);fx+=46;
       });
       y+=44;

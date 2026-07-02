@@ -2119,6 +2119,67 @@ function renderMapaCanvas(mapaId){
   });
 }
 
+/* ===== ETIQUETAS QR EM FOLHA A4 ===== */
+function qrCanvasDataUrl(text, sizePx){
+  return new Promise((resolve)=>{
+    if(!window.QRCode){resolve(null);return;}
+    const holder=document.createElement('div');
+    holder.style.position='fixed';holder.style.left='-9999px';holder.style.top='0';
+    document.body.appendChild(holder);
+    try{ new QRCode(holder,{text:String(text),width:sizePx,height:sizePx,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M}); }
+    catch(e){ document.body.removeChild(holder); resolve(null); return; }
+    setTimeout(()=>{
+      let du=null; const cv=holder.querySelector('canvas');
+      if(cv){ try{du=cv.toDataURL('image/png');}catch(e){du=null;} }
+      else { const im=holder.querySelector('img'); if(im&&im.src) du=im.src; }
+      document.body.removeChild(holder); resolve(du);
+    },40);
+  });
+}
+async function gerarEtiquetasA4(){
+  const {jsPDF}=window.jspdf;
+  const regSel=(document.getElementById('etqRegen')||{}).value||'todos';
+  const platFiltro=((document.getElementById('etqPlats')||{}).value||'').trim().toUpperCase();
+  const layout=(document.getElementById('etqLayout')||{}).value||'3x7';
+  let plats=platsAtivas();
+  if(regSel!=='todos') plats=plats.filter(p=>p.regen===+regSel);
+  if(platFiltro){
+    const codes=platFiltro.split(/[^0-9A-Z]+/).filter(Boolean);
+    plats=plats.filter(p=>codes.includes(String(p.cod).toUpperCase()));
+  }
+  plats.sort((a,b)=>String(a.cod).localeCompare(String(b.cod),undefined,{numeric:true}));
+  if(!plats.length){ toast('Nenhuma plataforma para os filtros selecionados.','err'); return; }
+  toast('Gerando etiquetas...','ok');
+  const parts=layout.split('x'); const cols=+parts[0]||3, rows=+parts[1]||7; const perPage=cols*rows;
+  const doc=new jsPDF({unit:'mm',format:'a4'});
+  const PW=210,PH=297,margin=8,gx=2,gy=2;
+  const cellW=(PW-2*margin-(cols-1)*gx)/cols;
+  const cellH=(PH-2*margin-(rows-1)*gy)/rows;
+  let i=0;
+  for(const p of plats){
+    const idx=i%perPage;
+    if(i>0 && idx===0) doc.addPage();
+    const col=idx%cols, row=Math.floor(idx/cols);
+    const x=margin+col*(cellW+gx), y=margin+row*(cellH+gy);
+    doc.setDrawColor(205);doc.setLineWidth(0.2);doc.rect(x,y,cellW,cellH);
+    const qrSize=Math.max(12, Math.min(cellH-8, cellW*0.5));
+    const du=await qrCanvasDataUrl(CONFIG.baseUrl+p.cod, 220);
+    const qrX=x+2.5, qrY=y+(cellH-qrSize)/2;
+    if(du){ try{ doc.addImage(du,'PNG',qrX,qrY,qrSize,qrSize); }catch(e){} }
+    const tx=qrX+qrSize+3; let ty=y+cellH/2-3.5;
+    doc.setTextColor(20);doc.setFont(undefined,'bold');doc.setFontSize(Math.min(15,Math.max(9,cellW*0.14)));
+    doc.text(String(p.cod), tx, ty); ty+=5;
+    doc.setFont(undefined,'normal');doc.setFontSize(7.5);doc.setTextColor(80);
+    const reg=doc.splitTextToSize(String(p.regenNome||''), Math.max(10,cellW-(qrSize+7)));
+    doc.text(reg, tx, ty); ty+=reg.length*3.4+1;
+    doc.setFontSize(6.3);doc.setTextColor(120);
+    doc.text('SGIA — Escaneie para inspecionar', tx, ty);
+    i++;
+  }
+  doc.save('SGIA_etiquetas.pdf');
+  logAudit('Etiquetas QR geradas','QR Code',`${plats.length} etiqueta(s) • layout ${layout}`);
+  toast(`${plats.length} etiqueta(s) geradas!`,'ok');
+}
 function renderRelatorios(){
   const c=document.getElementById('content');
   c.innerHTML=`
@@ -2128,6 +2189,20 @@ function renderRelatorios(){
   </div>
   <div class="rep-grid">
     <div class="rep-card"><div class="ric">📅</div><h4>Relatório Semanal</h4><p>Resumo consolidado da semana com status de todas as plataformas.</p><button class="btn-sm" onclick="gerarPDF('semanal')">Gerar PDF</button></div>
+    <div class="rep-card"><div class="ric">🏷️</div><h4>Etiquetas QR (folha A4)</h4><p>Folha A4 com QR Code + identificação das plataformas, pronta para imprimir e colar em campo.</p>
+      <select id="etqRegen" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--txt);margin-bottom:10px">
+        <option value="todos">Todos os regeneradores</option>
+        ${CONFIG.regeneradores.map(r=>`<option value="${r.id}">${r.nome}</option>`).join('')}
+      </select>
+      <input id="etqPlats" placeholder="Plataformas específicas (ex: 1A, 1B) — opcional" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--txt);margin-bottom:10px" oninput="this.value=this.value.toUpperCase()">
+      <select id="etqLayout" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--txt);margin-bottom:10px">
+        <option value="2x5">10 etiquetas por folha (2 × 5)</option>
+        <option value="2x6">12 etiquetas por folha (2 × 6)</option>
+        <option value="3x7" selected>21 etiquetas por folha (3 × 7)</option>
+        <option value="3x8">24 etiquetas por folha (3 × 8)</option>
+        <option value="4x10">40 etiquetas por folha (4 × 10)</option>
+      </select>
+      <button class="btn-sm" onclick="gerarEtiquetasA4()">🖨️ Gerar folha A4</button></div>
     <div class="rep-card"><div class="ric">🏭</div><h4>Por Regenerador</h4><p>Situação detalhada das plataformas de um equipamento específico.</p>
       <select id="repRegen" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--txt);margin-bottom:10px">${CONFIG.regeneradores.map(r=>`<option value="${r.id}">${r.nome}</option>`).join('')}</select>
       <button class="btn-sm" onclick="gerarPDF('regen')">Gerar PDF</button></div>

@@ -2161,6 +2161,7 @@ function qrCanvasDataUrl(text, sizePx){
   });
 }
 async function gerarEtiquetasA4(){
+  if(!temPerm('admin')){toast("Apenas o Administrador pode gerar etiquetas.","err");return;}
   const {jsPDF}=window.jspdf;
   const regSel=(document.getElementById('etqRegen')||{}).value||'todos';
   const platFiltro=((document.getElementById('etqPlats')||{}).value||'').trim().toUpperCase();
@@ -2186,18 +2187,17 @@ async function gerarEtiquetasA4(){
     const col=idx%cols, row=Math.floor(idx/cols);
     const x=margin+col*(cellW+gx), y=margin+row*(cellH+gy);
     doc.setDrawColor(205);doc.setLineWidth(0.2);doc.rect(x,y,cellW,cellH);
-    const qrSize=Math.max(12, Math.min(cellH-8, cellW*0.5));
-    const du=await qrCanvasDataUrl(CONFIG.baseUrl+p.cod, 220);
+    const qrSize=Math.max(12, Math.min(cellH-6, cellW*0.45));
+    const du=await qrCanvasDataUrl(CONFIG.baseUrl+p.cod, 260);
     const qrX=x+2.5, qrY=y+(cellH-qrSize)/2;
     if(du){ try{ doc.addImage(du,'PNG',qrX,qrY,qrSize,qrSize); }catch(e){} }
-    const tx=qrX+qrSize+3; let ty=y+cellH/2-3.5;
-    doc.setTextColor(20);doc.setFont(undefined,'bold');doc.setFontSize(Math.min(15,Math.max(9,cellW*0.14)));
-    doc.text(String(p.cod), tx, ty); ty+=5;
-    doc.setFont(undefined,'normal');doc.setFontSize(7.5);doc.setTextColor(80);
-    const reg=doc.splitTextToSize(String(p.regenNome||''), Math.max(10,cellW-(qrSize+7)));
-    doc.text(reg, tx, ty); ty+=reg.length*3.4+1;
-    doc.setFontSize(6.3);doc.setTextColor(120);
-    doc.text('SGIA — Escaneie para inspecionar', tx, ty);
+    // código GRANDE e bem destacado ao lado do QR (só QR + plataforma)
+    const tx=qrX+qrSize+2, availW=Math.max(8,(x+cellW-2)-tx);
+    let fs=Math.min(52, availW*1.05, cellH*2.2);
+    doc.setFont(undefined,'bold'); doc.setFontSize(fs);
+    while(fs>10 && doc.getTextWidth(String(p.cod))>availW){ fs-=1; doc.setFontSize(fs); }
+    doc.setTextColor(0);
+    doc.text(String(p.cod), tx+availW/2, y+cellH/2, {align:'center', baseline:'middle'});
     i++;
   }
   doc.save('SGIA_etiquetas.pdf');
@@ -2213,7 +2213,7 @@ function renderRelatorios(){
   </div>
   <div class="rep-grid">
     <div class="rep-card"><div class="ric">📅</div><h4>Relatório Semanal</h4><p>Resumo consolidado da semana com status de todas as plataformas.</p><button class="btn-sm" onclick="gerarPDF('semanal')">Gerar PDF</button></div>
-    <div class="rep-card"><div class="ric">🏷️</div><h4>Etiquetas QR (folha A4)</h4><p>Folha A4 com QR Code + identificação das plataformas, pronta para imprimir e colar em campo.</p>
+    ${temPerm('admin')?`<div class="rep-card"><div class="ric">🏷️</div><h4>Etiquetas QR (folha A4)</h4><p>Folha A4 com QR Code + identificação das plataformas, pronta para imprimir e colar em campo.</p>
       <select id="etqRegen" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--txt);margin-bottom:10px">
         <option value="todos">Todos os regeneradores</option>
         ${CONFIG.regeneradores.map(r=>`<option value="${r.id}">${r.nome}</option>`).join('')}
@@ -2226,7 +2226,7 @@ function renderRelatorios(){
         <option value="3x8">24 etiquetas por folha (3 × 8)</option>
         <option value="4x10">40 etiquetas por folha (4 × 10)</option>
       </select>
-      <button class="btn-sm" onclick="gerarEtiquetasA4()">🖨️ Gerar folha A4</button></div>
+      <button class="btn-sm" onclick="gerarEtiquetasA4()">🖨️ Gerar folha A4</button></div>`:''}
     <div class="rep-card"><div class="ric">🏭</div><h4>Por Regenerador</h4><p>Situação detalhada das plataformas de um equipamento específico.</p>
       <select id="repRegen" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--txt);margin-bottom:10px">${CONFIG.regeneradores.map(r=>`<option value="${r.id}">${r.nome}</option>`).join('')}</select>
       <button class="btn-sm" onclick="gerarPDF('regen')">Gerar PDF</button></div>

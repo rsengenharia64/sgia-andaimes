@@ -663,10 +663,34 @@ function gerarOcorrencias(){
 
 /* registra evento no log global de auditoria */
 function logAudit(acao, alvo, detalhe){
+  const pf=PERFIS[STATE.usuario.perfil]; const perfilNome=pf?pf.nome:'—';
   STATE.auditoria.unshift({
-    id:uid(), data:hoje(), usuario:STATE.usuario.nome, perfil:PERFIS[STATE.usuario.perfil].nome,
+    id:uid(), data:hoje(), usuario:STATE.usuario.nome, perfil:perfilNome,
     acao, alvo, detalhe
   });
+  if(STATE.usuario && STATE.usuario.real){
+    try{
+      sbClient().from('auditoria').insert({
+        usuario_id:STATE.usuario.id, acao:acao, entidade:alvo||null,
+        depois:{usuario:STATE.usuario.nome, perfil:perfilNome, alvo:alvo||null, detalhe:detalhe||null}
+      }).then(()=>{},()=>{});
+    }catch(e){}
+  }
+}
+async function histCarregar(){
+  if(!STATE.usuario || !STATE.usuario.real) return;
+  try{
+    const sb=sbClient();
+    const {data,error}=await sb.from('auditoria').select('*').order('data',{ascending:false}).limit(500);
+    if(error) throw error;
+    STATE.auditoria=(data||[]).map(r=>({
+      id:r.id, data:r.data,
+      usuario:(r.depois&&r.depois.usuario)||'—', perfil:(r.depois&&r.depois.perfil)||'—',
+      acao:r.acao, alvo:(r.depois&&r.depois.alvo)||r.entidade||'—', detalhe:(r.depois&&r.depois.detalhe)||''
+    }));
+    STATE.histCarregado=true;
+    if(typeof currentPage!=='undefined' && currentPage==='historico') renderHistorico();
+  }catch(e){ console.warn('histCarregar',e); }
 }
 </script>
 
@@ -2574,6 +2598,7 @@ async function gerarPDFseguranca(){
    ==================================================================== */
 function renderHistorico(){
   const c=document.getElementById('content');
+  if(STATE.usuario && STATE.usuario.real && !STATE.histCarregado){ histCarregar(); }
   c.innerHTML=`
   <div class="page-head"><h3>🕓 Histórico e Auditoria</h3><p>Rastreabilidade completa — nenhuma informação é perdida</p></div>
   <div class="panel">

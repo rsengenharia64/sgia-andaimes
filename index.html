@@ -2187,13 +2187,13 @@ async function gerarEtiquetasA4(){
     const col=idx%cols, row=Math.floor(idx/cols);
     const x=margin+col*(cellW+gx), y=margin+row*(cellH+gy);
     doc.setDrawColor(205);doc.setLineWidth(0.2);doc.rect(x,y,cellW,cellH);
-    const qrSize=Math.max(12, Math.min(cellH-6, cellW*0.45));
+    const qrSize=Math.max(12, Math.min(cellH-8, cellW*0.5));
     const du=await qrCanvasDataUrl(CONFIG.baseUrl+p.cod, 260);
     const qrX=x+2.5, qrY=y+(cellH-qrSize)/2;
     if(du){ try{ doc.addImage(du,'PNG',qrX,qrY,qrSize,qrSize); }catch(e){} }
     // código GRANDE e bem destacado ao lado do QR (só QR + plataforma)
     const tx=qrX+qrSize+2, availW=Math.max(8,(x+cellW-2)-tx);
-    let fs=Math.min(52, availW*1.05, cellH*2.2);
+    let fs=Math.min(56, cellH*2.4);   // alvo bem grande (~5x); encolhe só se nao couber
     doc.setFont(undefined,'bold'); doc.setFontSize(fs);
     while(fs>10 && doc.getTextWidth(String(p.cod))>availW){ fs-=1; doc.setFontSize(fs); }
     doc.setTextColor(0);

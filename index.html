@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>SGIA — Sistema de Gestão de Integridade de Andaimes</title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
@@ -346,7 +349,14 @@ input,select,textarea{font-family:inherit;font-size:15px}
 .empty .eic{font-size:40px;margin-bottom:10px;opacity:.4}
 .hidden{display:none!important}
 .row-2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
-@media(max-width:560px){.row-2{grid-template-columns:1fr}.kpi .val{font-size:27px}.status-set{flex-direction:column}}
+@media(max-width:900px){
+  .mapa-pin{width:30px;height:30px;border-width:3px;font-size:9.5px;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+  .mapa-pin:hover{transform:translate(-50%,-50%)}
+}
+@media(max-width:560px){.row-2{grid-template-columns:1fr}.kpi .val{font-size:27px}.status-set{flex-direction:column}
+  .mapa-pin{width:21px;height:21px;border-width:2px;font-size:7px}
+  .mapa-wrap{min-height:auto}
+}
 .muted{color:var(--txt3);font-size:12px}
 .tag-next{font-size:11px;color:var(--amarelo);font-weight:600}
 .scope-note{background:var(--bg3);border:1px solid var(--line);border-left:3px solid var(--azul);border-radius:8px;padding:11px 14px;font-size:12.5px;color:var(--txt2);line-height:1.5;margin-bottom:16px}
@@ -739,17 +749,17 @@ function abrirApp(){
   document.getElementById('app').style.display='flex';
   aplicarSessao();
   goPage('dashboard');
-  abrirPlataformaPendente();
+  if(!(STATE.usuario && STATE.usuario.real)) abrirPlataformaPendente(); // demo: dados já prontos
 }
 /* Deep-link do QR: ?p=COD abre direto a ficha da plataforma ao escanear em campo */
 function abrirPlataformaPendente(){
   try{
+    if(STATE._pAberta) return;
     const cod=new URLSearchParams(location.search).get('p');
     if(!cod) return;
     const alvo=cod.trim().toUpperCase();
     const p=STATE.plataformas.find(x=>x.cod===alvo);
-    if(p){ setTimeout(()=>abrirFicha(p.cod), 350); }
-    else { toast(`Plataforma ${alvo} não encontrada nesta base.`,"err"); }
+    if(p){ STATE._pAberta=true; setTimeout(()=>abrirFicha(p.cod), 350); }
   }catch(e){}
 }
 
@@ -1356,6 +1366,7 @@ async function platCarregar(){
     });
     STATE.platCarregado=true;
     _reRender();
+    abrirPlataformaPendente(); // real: abre a ficha do QR já com os dados reais
   }catch(e){ console.warn('platCarregar',e); }
 }
 async function platSalvar(p){
@@ -1719,7 +1730,9 @@ async function carregarMapa(ev){
       const sb=sbClient();
       if(!STATE.contratoId) await segGarantirContrato(sb);
       const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.8));
-      const path=STATE.contratoId+'/mapa/'+mapaId+'.jpg';
+      // caminho ÚNICO por upload evita o CDN servir a imagem antiga em cache
+      const path=STATE.contratoId+'/mapa/'+mapaId+'-'+Date.now()+'.jpg';
+      try{ const {data:ant}=await sb.from('mapa_bg').select('path').eq('contrato_id',STATE.contratoId).eq('mapa_id',mapaId).maybeSingle(); if(ant&&ant.path) await sb.storage.from('sgia-imagens').remove([ant.path]); }catch(e){}
       const up=await sb.storage.from('sgia-imagens').upload(path,blob,{contentType:'image/jpeg',upsert:true});
       if(up.error) throw up.error;
       await sb.from('mapa_bg').upsert({contrato_id:STATE.contratoId, mapa_id:mapaId, path:path, updated_by:STATE.usuario.id, updated_at:new Date().toISOString()},{onConflict:'contrato_id,mapa_id'});

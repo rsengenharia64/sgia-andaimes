@@ -742,13 +742,27 @@ function iniciarDadosDemo(){
     STATE.ocorrencias=(STATE.usuario&&STATE.usuario.real)?[]:gerarOcorrencias();
     STATE.mapaImgs.carcaca = IMG_CARCACA;
     STATE.mapaImgs.camara  = IMG_CAMARA;
-    STATE.auditoria=[{id:uid(),data:hoje(),usuario:"Sistema",perfil:"—",acao:"Carga inicial",alvo:"Sistema",detalhe:`${STATE.plataformas.length} plataformas cadastradas nos ${CONFIG.regeneradores.length} regeneradores.`}];
+    STATE.auditoria=(STATE.usuario&&STATE.usuario.real)?[]:[{id:uid(),data:hoje(),usuario:"Sistema",perfil:"—",acao:"Carga inicial",alvo:"Sistema",detalhe:`${STATE.plataformas.length} plataformas cadastradas nos ${CONFIG.regeneradores.length} regeneradores.`}];
   }
+}
+/* Faixa fixa avisando MODO DEMONSTRAÇÃO — separa visualmente demo do ambiente real */
+function _demoBanner(){
+  let b=document.getElementById('demoBanner');
+  const demo = STATE.usuario && STATE.usuario.real===false;
+  if(demo){
+    if(!b){
+      b=document.createElement('div'); b.id='demoBanner';
+      b.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:4000;background:#b26a00;color:#fff;text-align:center;padding:6px 12px;font-size:12px;font-weight:800;letter-spacing:.4px;box-shadow:0 -2px 10px rgba(0,0,0,.45)';
+      b.textContent='⚠️ MODO DEMONSTRAÇÃO — dados fictícios, NÃO é o ambiente real';
+      document.body.appendChild(b);
+    }
+  } else if(b){ b.remove(); }
 }
 function abrirApp(){
   document.getElementById('login').style.display='none';
   document.getElementById('app').style.display='flex';
   aplicarSessao();
+  _demoBanner();
   goPage('dashboard');
   if(!(STATE.usuario && STATE.usuario.real)) abrirPlataformaPendente(); // demo: dados já prontos
 }
@@ -858,6 +872,7 @@ function aplicarSessao(){
 function logout(){
   try{ if(_sb) _sb.auth.signOut(); }catch(e){}
   STATE.usuario=null;
+  _demoBanner();
   document.getElementById('app').style.display='none';
   document.getElementById('login').style.display='flex';
   document.getElementById('loginUser').value='';

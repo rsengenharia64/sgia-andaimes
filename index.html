@@ -549,8 +549,9 @@ const STATUS_MAP = {
   pendente:   {key:"c", label:"Sem inspeção",ic:"⏳", badge:"c"}
 };
 function hoje(){return new Date();}
-function fmtData(d){if(!d)return "—";const x=new Date(d);return x.toLocaleDateString('pt-BR');}
-function fmtDataHora(d){const x=new Date(d);return x.toLocaleDateString('pt-BR')+' '+x.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
+function _parseData(d){ if(typeof d==='string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return new Date(d+'T12:00:00'); return new Date(d); }
+function fmtData(d){if(!d)return "—";const x=_parseData(d);return isNaN(x)?"—":x.toLocaleDateString('pt-BR');}
+function fmtDataHora(d){if(!d)return "—";const x=_parseData(d);return isNaN(x)?"—":x.toLocaleDateString('pt-BR')+' '+x.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
 function addDias(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function diasEntre(a,b){return Math.floor((new Date(b)-new Date(a))/(1000*60*60*24));}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
@@ -737,7 +738,7 @@ function sbClient(){
 /* Carga dos dados de demonstração (placeholder enquanto os módulos não leem do banco) */
 function iniciarDadosDemo(){
   if(STATE.plataformas.length===0){
-    STATE.plataformas=gerarPlataformas();
+    STATE.plataformas=(STATE.usuario&&STATE.usuario.real)?[]:gerarPlataformas();
     STATE.ocorrencias=(STATE.usuario&&STATE.usuario.real)?[]:gerarOcorrencias();
     STATE.mapaImgs.carcaca = IMG_CARCACA;
     STATE.mapaImgs.camara  = IMG_CAMARA;
@@ -1354,8 +1355,7 @@ async function platCarregar(){
     (regs||[]).forEach(r=>{ info[r.id]={num:r.num,nome:r.nome}; STATE.regMap[r.num]=r.id; });
     const {data,error}=await sb.from('plataformas').select('*').is('excluido_em',null).limit(3000);
     if(error) throw error;
-    if(!data || !data.length) return; // segurança: se vier vazio, mantém os dados atuais
-    STATE.plataformas=data.map(p=>{
+    STATE.plataformas=(data||[]).map(p=>{
       const r=info[p.regenerador_id]||{num:0,nome:'—'};
       return { dbId:p.id, cod:p.codigo, regen:r.num, regenNome:r.nome,
         status:p.status, inspecionada:!!p.inspecionada, ativo:p.ativo!==false, extra:!!p.extra,

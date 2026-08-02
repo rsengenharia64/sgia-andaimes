@@ -1514,7 +1514,7 @@ async function imgUploadCanvas(cv, tipo, entidadeId){
     provider:'supabase', bucket:'sgia-imagens', path:path, path_thumb:pathT,
     tamanho:blob.size, criado_por_id:STATE.usuario.id
   }).select('id').single();
-  const {data:sg}=await sb.storage.from('sgia-imagens').createSignedUrl(path,3600);
+  const {data:sg}=await sb.storage.from('sgia-imagens').createSignedUrl(path,28800);
   return { id:(row&&row.id)||uid2, dbId:(row&&row.id)||null, path:path, pathT:pathT, src:(sg&&sg.signedUrl)||'', data:hoje(), autor:STATE.usuario.nome };
 }
 async function imgUploadDataUrl(dataUrl, tipo, entidadeId){
@@ -1528,7 +1528,7 @@ async function imgCarregar(tipo, entidadeId){
   const {data}=await sb.from('imagens').select('*').eq('entidade_tipo',tipo).eq('entidade_id',entidadeId).is('excluido_em',null).order('created_at');
   const out=[];
   for(const r of (data||[])){
-    const {data:sg}=await sb.storage.from('sgia-imagens').createSignedUrl(r.path,3600);
+    const {data:sg}=await sb.storage.from('sgia-imagens').createSignedUrl(r.path,28800);
     out.push({ id:r.id, dbId:r.id, path:r.path, pathT:r.path_thumb, src:(sg&&sg.signedUrl)||'', data:r.created_at, autor:'' });
   }
   return out;
@@ -1641,7 +1641,7 @@ function baixarQR(cod){
    ==================================================================== */
 function renderMapa(){
   if(STATE.usuario&&STATE.usuario.real&&!STATE.platCarregado){platCarregar();}
-  if(STATE.usuario&&STATE.usuario.real&&!STATE.mapaCarregado){STATE.mapaCarregado=true;mapaCarregar();}
+  if(STATE.usuario&&STATE.usuario.real){var _mst=Date.now()-(STATE._mapaTs||0);if(!STATE.mapaCarregado||_mst>300000){STATE.mapaCarregado=true;STATE._mapaTs=Date.now();mapaCarregar();}}
   const c=document.getElementById('content');
   const podeEditar=temPerm('mapa_edit');
   const mapaInfo=CONFIG.mapas.find(m=>m.id===STATE.mapaAtivo);

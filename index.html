@@ -1145,6 +1145,136 @@ function imprimirIndicadores(){
   try{ logAudit('Indicadores impressos','Dashboard','Relatório de indicadores gerado por '+STATE.usuario.nome+'.'); }catch(e){}
 }
 
+/* ===== RELATÓRIO DE ANÁLISE + APRESENTAÇÃO DE RISCOS ===== */
+function _val(id){var e=document.getElementById(id);return e?e.value:'';}
+function _chk(id){var e=document.getElementById(id);return e?e.checked:false;}
+function _dtParts(d){var x=_parseData(d);if(isNaN(x))return {data:'—',dia:'—',hora:'—'};
+  return {data:x.toLocaleDateString('pt-BR'),dia:x.toLocaleDateString('pt-BR',{weekday:'long'}),hora:x.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})};}
+function _noPeriodo(d,de,ate){var x=_parseData(d);if(isNaN(x))return false;
+  if(de){var a=new Date(de+'T00:00:00');if(x<a)return false;}
+  if(ate){var b=new Date(ate+'T23:59:59');if(x>b)return false;}
+  return true;}
+function _recData(F){
+  F=F||{};
+  var plats=platsAtivas().filter(function(p){
+    if(F.regen && F.regen!=='todos' && p.regen!=Number(F.regen))return false;
+    if(F.status && F.status!=='todos' && p.status!==F.status)return false;
+    return true;
+  });
+  var insp=[];
+  plats.forEach(function(p){(p.historico||[]).forEach(function(h){
+    if(h.acao==='Inspeção realizada' && _noPeriodo(h.data,F.de,F.ate))
+      insp.push({data:h.data,cod:p.cod,regen:p.regenNome||('Reg '+p.regen),status:h.status||p.status,detalhe:h.detalhe||'',usuario:h.usuario||p.responsavel||'—'});
+  });});
+  insp.sort(function(a,b){return _parseData(b.data)-_parseData(a.data);});
+  var nc=[];
+  plats.forEach(function(p){
+    var itens=CONFIG.checklist.filter(function(it){return p.checklist&&p.checklist[it.id]==='nao_conforme';}).map(function(it){return it.nome;});
+    if(itens.length) nc.push({cod:p.cod,regen:p.regenNome||('Reg '+p.regen),itens:itens,status:p.status,ult:p.ultInspecao,resp:p.responsavel||'—'});
+  });
+  var ocs=(STATE.ocorrencias||[]).filter(function(o){
+    if(!_noPeriodo(o.data,F.de,F.ate))return false;
+    if(F.regen && F.regen!=='todos'){var rn=((CONFIG.regeneradores.find(function(r){return r.id==Number(F.regen);})||{}).nome)||'';var loc=(o.local||'');if(loc.indexOf(rn)<0 && loc.indexOf('egenerador '+F.regen)<0 && loc.indexOf('Reg '+F.regen)<0)return false;}
+    return true;
+  }).slice().sort(function(a,b){return _parseData(b.data)-_parseData(a.data);});
+  var aud=(STATE.auditoria||[]).filter(function(a){return _noPeriodo(a.data,F.de,F.ate);});
+  return {plats:plats,insp:insp,nc:nc,ocs:ocs,aud:aud};
+}
+function _recomendacoes(){
+  var d=_indData();var recs=[];
+  if(d.libPend.length) recs.push({t:'Critério de liberação',x:'Há '+d.libPend.length+' andaime(s) com placa liberada e pendência. Reforçar com o time de montagem que o andaime só recebe etiqueta verde após checklist 100% conforme e inspeção dentro do prazo.'});
+  if(d.pareto.length){var top=d.pareto[0];recs.push({t:'Treinamento direcionado',x:'O item que mais reprova é "'+top.nome+'" ('+top.n+' ocorrência(s)). Priorizar capacitação da montagem na instalação e conferência de '+top.nome+'.'});}
+  if(d.vencidas) recs.push({t:'Backlog de inspeção',x:d.vencidas+' andaime(s) com inspeção vencida. Reprogramar a rota de inspeção e reforçar a periodicidade de '+CONFIG.prazoInspecaoDias+' dias.'});
+  var hs=d.heat.slice().sort(function(a,b){return b.n-a.n;})[0];
+  if(hs && hs.n>0) recs.push({t:'Concentração de risco',x:hs.nome+' concentra o maior número de restrições/interdições ('+hs.n+'). Alocar supervisão reforçada e revisar o procedimento de montagem nesse equipamento.'});
+  if(d.recorr.length) recs.push({t:'Reincidência',x:'Plataformas com falhas repetidas: '+d.recorr.slice(0,5).map(function(r){return r.cod+' ('+r.n+'x)';}).join(', ')+'. Investigar causa raiz — material, montagem ou uso.'});
+  if((d.pro+d.rea)>0 && d.rea>d.pro*0.5) recs.push({t:'Cultura de segurança',x:'Proporção de registros reativos elevada. Estimular o time a registrar observações e condições inseguras (proativo) antes do incidente.'});
+  if(!recs.length) recs.push({t:'Situação saudável',x:'Sem desvios relevantes no período. Manter a rotina de inspeção e os registros de segurança.'});
+  return recs;
+}
+function _tbl(cols,rows){
+  var th=cols.map(function(c){return '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #cbd5e1;font-size:11px;color:#475569;white-space:nowrap">'+c+'</th>';}).join('');
+  var tr=rows.map(function(r){return '<tr>'+r.map(function(c){return '<td style="padding:6px 8px;border-bottom:0.5px solid #e5e7eb;font-size:11.5px;color:#0f172a;vertical-align:top">'+c+'</td>';}).join('')+'</tr>';}).join('');
+  return '<table style="width:100%;border-collapse:collapse;margin:6px 0 14px">'+'<thead><tr>'+th+'</tr></thead><tbody>'+tr+'</tbody></table>';
+}
+function gerarRelatorioAnalise(){
+  var w=window.open('','_blank');if(!w){toast('Permita pop-ups para gerar o relatório.','err');return;}
+  var F={de:_val('anDe'),ate:_val('anAte'),regen:_val('anRegen'),status:_val('anStatus')};
+  var opt={ind:_chk('chkInd'),insp:_chk('chkInsp'),nc:_chk('chkNC'),oc:_chk('chkOc'),rec:_chk('chkRec'),aud:_chk('chkAud')};
+  var R=_recData(F);var P=P_PRINT;
+  var regNome=(F.regen&&F.regen!=='todos')?(((CONFIG.regeneradores.find(function(r){return r.id==Number(F.regen);})||{}).nome)||F.regen):'Todos';
+  var stMap={liberada:'Liberada',restrita:'Restrita',interditada:'Interditada',pendente:'Sem inspeção'};
+  var stNome=(F.status&&F.status!=='todos')?(stMap[F.status]||F.status):'Todos';
+  var periodo=(F.de||F.ate)?((F.de?fmtData(F.de):'início')+' até '+(F.ate?fmtData(F.ate):'hoje')):'Todo o histórico';
+  var agora=new Date().toLocaleDateString('pt-BR')+' '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  function h2(t){return '<h2 style="font-size:16px;color:#0f172a;margin:20px 0 4px;border-bottom:1px solid #e5e7eb;padding-bottom:4px">'+t+'</h2>';}
+  var parts=[];
+  if(opt.ind){parts.push(h2('Panorama atual (indicadores)'));parts.push(_indBlocksHTML(P));}
+  if(opt.insp){parts.push(h2('Inspeções ('+R.insp.length+')'));
+    if(R.insp.length){var r1=R.insp.slice(0,300).map(function(x){var dp=_dtParts(x.data);var st=(STATUS_MAP[x.status]||{label:x.status||'—'}).label;return [dp.data,dp.dia,dp.hora,x.cod,x.regen,st,x.detalhe,x.usuario];});parts.push(_tbl(['Data','Dia','Hora','Plataforma','Regenerador','Status','Detalhe','Responsável'],r1));}
+    else parts.push('<div style="font-size:12.5px;color:#64748b;margin-bottom:12px">Sem inspeções no período/filtro.</div>');}
+  if(opt.nc){parts.push(h2('Não conformidades atuais ('+R.nc.length+')'));
+    if(R.nc.length){var r2=R.nc.map(function(x){return [x.cod,x.regen,x.itens.join(', '),(STATUS_MAP[x.status]||{label:x.status}).label,x.ult?fmtData(x.ult):'—',x.resp];});parts.push(_tbl(['Plataforma','Regenerador','Itens reprovados','Status','Última inspeção','Responsável'],r2));}
+    else parts.push('<div style="font-size:12.5px;color:#64748b;margin-bottom:12px">Nenhuma não conformidade no filtro.</div>');}
+  if(opt.oc){parts.push(h2('Ocorrências de segurança ('+R.ocs.length+')'));
+    if(R.ocs.length){var r3=R.ocs.map(function(o){var dp=_dtParts(o.data);return [dp.data,dp.dia,dp.hora,catNome(o.categoria),o.local||'—',(SIT_MAP[o.situacao]||{label:o.situacao}).label,o.descricao||'—',o.autor||'—',o.acaoResponsavel||o.responsavel||'—'];});parts.push(_tbl(['Data','Dia','Hora','Categoria','Local','Situação','Descrição','Autor','Ação/Resp.'],r3));}
+    else parts.push('<div style="font-size:12.5px;color:#64748b;margin-bottom:12px">Sem ocorrências no período/filtro.</div>');}
+  if(opt.rec){parts.push(h2('Recomendações — desenvolvimento do time de montagem'));
+    parts.push(_recomendacoes().map(function(r){return '<div style="border-left:3px solid #2563eb;background:#f8fafc;padding:8px 12px;margin:0 0 8px"><div style="font-size:13px;font-weight:700;color:#0f172a">'+r.t+'</div><div style="font-size:12.5px;color:#475569;margin-top:2px">'+r.x+'</div></div>';}).join(''));}
+  if(opt.aud){parts.push(h2('Trilha de auditoria ('+R.aud.length+')'));
+    if(R.aud.length){var r4=R.aud.slice(0,300).map(function(a){return [fmtDataHora(a.data),a.usuario+' ('+(a.perfil||'—')+')',a.acao,a.alvo||'—',a.detalhe||'—'];});parts.push(_tbl(['Data / Hora','Usuário','Ação','Alvo','Detalhe'],r4));}
+    else parts.push('<div style="font-size:12.5px;color:#64748b;margin-bottom:12px">Sem registros de auditoria no período.</div>');}
+  var doc='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório de Análise — SGIA</title>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Segoe UI,Arial,sans-serif;background:#fff;color:#0f172a;padding:22px;max-width:1000px;margin:0 auto}'
+    +'.hd{border-bottom:2px solid #0f172a;padding-bottom:10px;margin-bottom:8px}.hd h1{font-size:18px}'
+    +'.meta{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:#475569;margin:8px 0 6px}.meta b{color:#0f172a}'
+    +'@media print{.noprint{display:none}}table{page-break-inside:auto}tr{page-break-inside:avoid}</style></head><body>'
+    +'<div class="hd"><h1>Relatório de Análise — Integridade &amp; Segurança</h1></div>'
+    +'<div class="meta"><span>Cliente: <b>'+CONFIG.cliente+'</b></span><span>Período: <b>'+periodo+'</b></span><span>Regenerador: <b>'+regNome+'</b></span><span>Status: <b>'+stNome+'</b></span><span>Gerado em: <b>'+agora+'</b></span><span>Por: <b>'+STATE.usuario.nome+'</b></span></div>'
+    +parts.join('')
+    +'<div class="noprint" style="text-align:center;margin-top:22px"><button onclick="window.print()" style="padding:10px 22px;font-size:14px;border:none;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer">🖨️ Imprimir / Salvar PDF</button></div>'
+    +'</body></html>';
+  w.document.open();w.document.write(doc);w.document.close();
+  try{logAudit('Relatório de análise gerado','Relatórios','Período '+periodo+' • Regen '+regNome+' • Status '+stNome+'.');}catch(e){}
+}
+function gerarApresentacaoRiscos(){
+  var w=window.open('','_blank');if(!w){toast('Permita pop-ups para abrir a apresentação.','err');return;}
+  var d=_indData();var recs=_recomendacoes();
+  var agora=new Date().toLocaleDateString('pt-BR')+' '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  function slide(inner){return '<section class="slide">'+inner+'</section>';}
+  function barP(w2,color){return '<div style="flex:1;background:#eef2f7;border-radius:8px;height:24px;overflow:hidden"><div style="width:'+w2+'%;height:100%;background:'+color+'"></div></div>';}
+  var S=[];
+  S.push(slide('<div style="text-align:center"><div style="font-size:14px;letter-spacing:3px;color:#2563eb;font-weight:700">SGIA • ANÁLISE DE RISCOS</div><h1 style="font-size:44px;margin:16px 0;color:#0f172a">Riscos &amp; Recomendações</h1><div style="font-size:20px;color:#475569">'+CONFIG.cliente+'</div><div style="font-size:14px;color:#94a3b8;margin-top:12px">Desenvolvimento do time de montagem • '+agora+'</div></div>'));
+  var kpiBig='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:10px">'
+    +[['Disponibilidade',d.pctDisp+'%','#16a34a'],['Liberado c/ pendência',d.libPend.length,'#dc2626'],['Inspeções vencidas',d.vencidas,'#d97706'],['Itens não conformes',d.totalNC,'#2563eb']].map(function(k){return '<div style="background:#f8fafc;border-radius:12px;padding:18px;text-align:center"><div style="font-size:38px;font-weight:700;color:'+k[2]+'">'+k[1]+'</div><div style="font-size:13px;color:#475569;margin-top:4px">'+k[0]+'</div></div>';}).join('')+'</div>';
+  S.push(slide('<h2 style="font-size:30px;color:#0f172a;margin-bottom:8px">Panorama de risco</h2><div style="font-size:14px;color:#64748b;margin-bottom:12px">Situação atual do parque de andaimes</div>'+kpiBig));
+  var pend = d.libPend.length ? d.libPend.slice(0,8).map(function(x){return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #e5e7eb"><span style="background:#16a34a;color:#fff;font-weight:700;padding:4px 12px;border-radius:20px">'+x.cod+'</span><span style="font-size:16px;color:#334155">'+x.motivo+'</span></div>';}).join('') : '<div style="font-size:18px;color:#16a34a;margin-top:12px">Nenhum andaime liberado com pendência. ✔</div>';
+  S.push(slide('<h2 style="font-size:30px;color:#dc2626;margin-bottom:6px">⚠️ Risco oculto: liberado com pendência</h2><div style="font-size:14px;color:#64748b;margin-bottom:8px">Placa verde onde a evidência não fecha — prioridade máxima</div>'+pend));
+  var pmax=d.pareto.length?d.pareto[0].n:1;
+  var par=d.pareto.length?d.pareto.map(function(x){var w2=Math.round(x.n/pmax*100);return '<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px"><span style="width:150px;font-size:16px;color:#334155">'+x.ic+' '+x.nome+'</span>'+barP(w2,'#2563eb')+'<span style="width:30px;font-size:16px;font-weight:700;color:#0f172a">'+x.n+'</span></div>';}).join(''):'<div style="font-size:18px;color:#64748b">Nenhuma não conformidade registrada.</div>';
+  S.push(slide('<h2 style="font-size:30px;color:#0f172a;margin-bottom:6px">Onde mais falha</h2><div style="font-size:14px;color:#64748b;margin-bottom:14px">Itens do checklist que mais reprovam</div>'+par));
+  var hmax=Math.max.apply(null,d.heat.map(function(h){return h.n;}).concat([1]));
+  var heat='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:12px">'+d.heat.map(function(h){var col=h.n===0?'#16a34a':(h.n>=hmax*0.66?'#dc2626':(h.n>=hmax*0.33?'#d97706':'#16a34a'));return '<div style="background:'+col+';border-radius:12px;padding:26px 10px;text-align:center;color:#fff"><div style="font-size:40px;font-weight:700">'+h.n+'</div><div style="font-size:14px;opacity:.92;margin-top:4px">'+h.nome+'</div></div>';}).join('')+'</div>';
+  S.push(slide('<h2 style="font-size:30px;color:#0f172a;margin-bottom:6px">Concentração por regenerador</h2><div style="font-size:14px;color:#64748b;margin-bottom:8px">Restrições + interdições por equipamento</div>'+heat));
+  var reinc=d.recorr.length?d.recorr.map(function(x){return '<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px"><span style="width:50px;font-size:18px;font-weight:700;color:#0f172a">'+x.cod+'</span>'+barP(Math.round(x.n/(d.recorr[0].n||1)*100),'#dc2626')+'<span style="font-size:16px;color:#475569">'+x.n+' reprovações</span></div>';}).join(''):'<div style="font-size:18px;color:#64748b">Sem reincidência registrada ainda.</div>';
+  S.push(slide('<h2 style="font-size:30px;color:#0f172a;margin-bottom:6px">Reincidência</h2><div style="font-size:14px;color:#64748b;margin-bottom:14px">Plataformas que mais reprovaram no histórico</div>'+reinc));
+  var recHtml=recs.map(function(r,i){return '<div style="display:flex;gap:14px;margin-bottom:16px"><div style="min-width:32px;height:32px;border-radius:50%;background:#2563eb;color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center">'+(i+1)+'</div><div><div style="font-size:18px;font-weight:700;color:#0f172a">'+r.t+'</div><div style="font-size:15px;color:#475569;margin-top:2px">'+r.x+'</div></div></div>';}).join('');
+  S.push(slide('<h2 style="font-size:30px;color:#0f172a;margin-bottom:6px">Recomendações — time de montagem</h2><div style="font-size:14px;color:#64748b;margin-bottom:16px">Ações de desenvolvimento derivadas dos dados</div>'+recHtml));
+  S.push(slide('<div style="text-align:center"><div style="font-size:26px;color:#0f172a;font-weight:700">Segurança é construída na montagem.</div><div style="font-size:15px;color:#64748b;margin-top:10px">SGIA — Sistema de Gestão de Integridade de Plataformas de Andaimes</div></div>'));
+  var css='*{box-sizing:border-box;margin:0;padding:0}body{font-family:Segoe UI,Arial,sans-serif;background:#0b1220}'
+    +'.slide{min-height:100vh;background:#fff;display:none;flex-direction:column;justify-content:center;padding:7vh 9vw}'
+    +'.slide:first-child{}'
+    +'.nav{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:10px;align-items:center;background:#0f172a;color:#fff;padding:8px 14px;border-radius:30px;font-size:13px;z-index:9}'
+    +'.nav button{background:#2563eb;color:#fff;border:none;border-radius:20px;padding:8px 16px;cursor:pointer;font-size:13px}'
+    +'@media print{.slide{display:flex!important;min-height:auto;page-break-after:always;padding:24px}.nav{display:none}}';
+  var js='(function(){var i=0;var s=document.querySelectorAll(".slide");function show(n){i=Math.max(0,Math.min(s.length-1,n));for(var k=0;k<s.length;k++){s[k].style.display=(k===i?"flex":"none");}document.getElementById("cnt").textContent=(i+1)+" / "+s.length;}window.__n=function(){show(i+1);};window.__p=function(){show(i-1);};document.addEventListener("keydown",function(e){if(e.key==="ArrowRight"||e.key===" ")window.__n();if(e.key==="ArrowLeft")window.__p();});show(0);})();';
+  var nav='<div class="nav"><button onclick="window.__p()">◀</button><span id="cnt">1</span><button onclick="window.__n()">▶</button><button onclick="window.print()">🖨️ Imprimir</button></div>';
+  var doc='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Apresentação de Riscos — SGIA</title><style>'+css+'</style></head><body>'+S.join('')+nav+'<scr'+'ipt>'+js+'</scr'+'ipt></body></html>';
+  w.document.open();w.document.write(doc);w.document.close();
+  try{logAudit('Apresentação de riscos gerada','Relatórios','Deck gerado por '+STATE.usuario.nome+'.');}catch(e){}
+}
+
+
 </script>
 
 <script>
@@ -2392,6 +2522,26 @@ function renderRelatorios(){
     <p>Gere e exporte relatórios em PDF</p>
   </div>
   <div class="rep-grid">
+    <div class="rep-card" style="grid-column:1/-1"><div class="ric">🔎</div><h4>Relatório de Análise (detalhado)</h4><p>Relatório para análise com data, dia e horário em cada registro. Escolha período, regenerador, status e o que incluir.</p>
+      <div class="row-2" style="gap:8px">
+        <input id="anDe" type="date" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px;color:var(--txt);margin-bottom:8px">
+        <input id="anAte" type="date" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px;color:var(--txt);margin-bottom:8px">
+      </div>
+      <div class="row-2" style="gap:8px">
+        <select id="anRegen" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px;color:var(--txt);margin-bottom:8px"><option value="todos">Todos regeneradores</option>${CONFIG.regeneradores.map(r=>`<option value="${r.id}">${r.nome}</option>`).join('')}</select>
+        <select id="anStatus" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px;color:var(--txt);margin-bottom:8px"><option value="todos">Todos os status</option><option value="liberada">Liberada</option><option value="restrita">Restrita</option><option value="interditada">Interditada</option><option value="pendente">Sem inspeção</option></select>
+      </div>
+      <div style="font-size:12px;color:var(--txt2);margin:4px 0 4px">Incluir no relatório:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px 16px;margin-bottom:10px;font-size:13px;color:var(--txt2)">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="chkInd" checked> Indicadores</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="chkInsp" checked> Inspeções</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="chkNC" checked> Não conformidades</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="chkOc" checked> Ocorrências</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="chkRec" checked> Recomendações</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="chkAud"> Trilha de auditoria</label>
+      </div>
+      <button class="btn-sm" onclick="gerarRelatorioAnalise()">🖨️ Gerar relatório</button></div>
+    <div class="rep-card"><div class="ric">🎯</div><h4>Apresentação de Riscos</h4><p>Slides automáticos de riscos e recomendações para o time de montagem. Navegue com as setas e imprima ou salve em PDF.</p><button class="btn-sm" onclick="gerarApresentacaoRiscos()">▶️ Gerar apresentação</button></div>
     <div class="rep-card"><div class="ric">📅</div><h4>Relatório Semanal</h4><p>Resumo consolidado da semana com status de todas as plataformas.</p><button class="btn-sm" onclick="gerarPDF('semanal')">Gerar PDF</button></div>
     ${temPerm('admin')?`<div class="rep-card"><div class="ric">🏷️</div><h4>Etiquetas QR (folha A4)</h4><p>Folha A4 com QR Code + identificação das plataformas, pronta para imprimir e colar em campo.</p>
       <select id="etqRegen" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--txt);margin-bottom:10px">

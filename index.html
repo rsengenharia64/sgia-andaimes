@@ -9,6 +9,7 @@
 <meta http-equiv="Expires" content="0">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <style>
 :root{
   --bg:#0d1117; --bg2:#161b22; --bg3:#1c2330; --line:#2a3441;
@@ -1237,8 +1238,9 @@ function gerarRelatorioAnalise(){
   w.document.open();w.document.write(doc);w.document.close();
   try{logAudit('Relatório de análise gerado','Relatórios','Período '+periodo+' • Regen '+regNome+' • Status '+stNome+'.');}catch(e){}
 }
-function gerarApresentacaoRiscos(){
+async function gerarApresentacaoRiscos(){
   var w=window.open('','_blank');if(!w){toast('Permita pop-ups para abrir a apresentação.','err');return;}
+  toast('Gerando apresentação com fotos...','ok');
   var d=_indData();var recs=_recomendacoes();
   var agora=new Date().toLocaleDateString('pt-BR')+' '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   function slide(inner){return '<section class="slide">'+inner+'</section>';}
@@ -1260,6 +1262,15 @@ function gerarApresentacaoRiscos(){
   S.push(slide('<h2 style="font-size:30px;color:#0f172a;margin-bottom:6px">Reincidência</h2><div style="font-size:14px;color:#64748b;margin-bottom:14px">Plataformas que mais reprovaram no histórico</div>'+reinc));
   var recHtml=recs.map(function(r,i){return '<div style="display:flex;gap:14px;margin-bottom:16px"><div style="min-width:32px;height:32px;border-radius:50%;background:#2563eb;color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center">'+(i+1)+'</div><div><div style="font-size:18px;font-weight:700;color:#0f172a">'+r.t+'</div><div style="font-size:15px;color:#475569;margin-top:2px">'+r.x+'</div></div></div>';}).join('');
   S.push(slide('<h2 style="font-size:30px;color:#0f172a;margin-bottom:6px">Recomendações — time de montagem</h2><div style="font-size:14px;color:#64748b;margin-bottom:16px">Ações de desenvolvimento derivadas dos dados</div>'+recHtml));
+  var _ncF=await _fotosNC();
+  var _comFoto=_ncF.filter(function(x){return x.fotos.length;});
+  if(_comFoto.length){
+    S.push(slide('<div style="text-align:center"><h2 style="font-size:32px;color:#0f172a">Evidências fotográficas</h2><div style="font-size:15px;color:#64748b;margin-top:8px">Fotos das não conformidades registradas na inspeção</div></div>'));
+    _comFoto.slice(0,12).forEach(function(x){
+      var imgs=x.fotos.slice(0,4).map(function(du){return '<img src="'+du+'" style="width:100%;height:230px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb">';}).join('');
+      S.push(slide('<h2 style="font-size:26px;color:#0f172a;margin-bottom:4px">Plataforma '+x.cod+' — '+x.regen+'</h2><div style="font-size:15px;color:#dc2626;margin-bottom:14px">Não conforme: '+x.itens.join(', ')+'</div><div style="display:grid;grid-template-columns:repeat('+(x.fotos.length>1?2:1)+',1fr);gap:14px">'+imgs+'</div>'));
+    });
+  }
   S.push(slide('<div style="text-align:center"><div style="font-size:26px;color:#0f172a;font-weight:700">Segurança é construída na montagem.</div><div style="font-size:15px;color:#64748b;margin-top:10px">SGIA — Sistema de Gestão de Integridade de Plataformas de Andaimes</div></div>'));
   var css='*{box-sizing:border-box;margin:0;padding:0}body{font-family:Segoe UI,Arial,sans-serif;background:#0b1220}'
     +'.slide{min-height:100vh;background:#fff;display:none;flex-direction:column;justify-content:center;padding:7vh 9vw}'
@@ -1273,6 +1284,97 @@ function gerarApresentacaoRiscos(){
   w.document.open();w.document.write(doc);w.document.close();
   try{logAudit('Apresentação de riscos gerada','Relatórios','Deck gerado por '+STATE.usuario.nome+'.');}catch(e){}
 }
+
+/* ===== FOTOS DE NC + EXPORT PDF/PPTX DA APRESENTAÇÃO ===== */
+async function _fotosNC(){
+  var out=[];
+  var plats=platsAtivas().filter(function(p){return p.checklist && CONFIG.checklist.some(function(it){return p.checklist[it.id]==='nao_conforme';});});
+  for(var i=0;i<plats.length;i++){
+    var p=plats[i];
+    try{ if(STATE.usuario&&STATE.usuario.real&&p.dbId&&!p._fotosCarregadas){ p.fotos=await imgCarregar('plataforma',p.dbId); p._fotosCarregadas=true; } }catch(e){}
+    var itens=CONFIG.checklist.filter(function(it){return p.checklist[it.id]==='nao_conforme';}).map(function(it){return it.nome;});
+    var fotos=[];
+    var lista=(p.fotos||[]);
+    for(var j=0;j<lista.length && fotos.length<4;j++){
+      try{ var du=await imgParaDataUrl(lista[j].src); if(du) fotos.push(du); }catch(e){}
+    }
+    out.push({cod:p.cod, regen:p.regenNome||('Reg '+p.regen), itens:itens, fotos:fotos});
+  }
+  return out;
+}
+async function _deckData(){
+  var d=_indData();
+  var ncFotos=await _fotosNC();
+  return { cliente:CONFIG.cliente,
+    agora:new Date().toLocaleDateString('pt-BR')+' '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),
+    pctDisp:d.pctDisp, libPendN:d.libPend.length, vencidas:d.vencidas, totalNC:d.totalNC,
+    libPend:d.libPend, pareto:d.pareto, heat:d.heat, recorr:d.recorr, recs:_recomendacoes(), ncFotos:ncFotos };
+}
+async function gerarApresentacaoPDF(){
+  if(!(window.jspdf&&window.jspdf.jsPDF)){toast('Biblioteca PDF não carregada.','err');return;}
+  toast('Gerando PDF da apresentação...','ok');
+  var D=await _deckData();
+  var jsPDF=window.jspdf.jsPDF;
+  var doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  var W=297,H=210,first=true;
+  function _rgb(h){h=(''+h).replace('#','');return [parseInt(h.substr(0,2),16),parseInt(h.substr(2,2),16),parseInt(h.substr(4,2),16)];}
+  function stc(c){var r=_rgb(c);doc.setTextColor(r[0],r[1],r[2]);}
+  function sfc(c){var r=_rgb(c);doc.setFillColor(r[0],r[1],r[2]);}
+  function np(){ if(first){first=false;} else doc.addPage(); }
+  function title(t,c){ stc(c||'#0f172a'); doc.setFont(undefined,'bold'); doc.setFontSize(22); doc.text(t,20,24); doc.setFont(undefined,'normal'); stc('#0f172a'); }
+  np(); stc('#2563eb'); doc.setFontSize(12); doc.text('SGIA • ANÁLISE DE RISCOS',20,64);
+  stc('#0f172a'); doc.setFont(undefined,'bold'); doc.setFontSize(34); doc.text('Riscos & Recomendações',20,86); doc.setFont(undefined,'normal');
+  stc('#475569'); doc.setFontSize(16); doc.text(D.cliente,20,100); stc('#94a3b8'); doc.setFontSize(11); doc.text('Time de montagem • '+D.agora,20,110);
+  np(); title('Panorama de risco');
+  [['Disponibilidade',D.pctDisp+'%','#16a34a'],['Liberado c/ pendência',''+D.libPendN,'#dc2626'],['Inspeções vencidas',''+D.vencidas,'#d97706'],['Itens não conformes',''+D.totalNC,'#2563eb']].forEach(function(k,i){var x=20+i*67,y=55; sfc('#f8fafc'); doc.roundedRect(x,y,60,45,3,3,'F'); stc(k[2]); doc.setFont(undefined,'bold'); doc.setFontSize(30); doc.text(k[1],x+30,y+24,{align:'center'}); doc.setFont(undefined,'normal'); doc.setFontSize(10); stc('#475569'); doc.text(k[0],x+30,y+36,{align:'center'});});
+  np(); title('Risco oculto: liberado com pendência','#dc2626'); doc.setFontSize(12); var yy=42;
+  if(D.libPend.length){ D.libPend.slice(0,11).forEach(function(p){ stc('#16a34a'); doc.setFont(undefined,'bold'); doc.text(p.cod,20,yy); doc.setFont(undefined,'normal'); stc('#334155'); doc.text(doc.splitTextToSize(p.motivo,235),42,yy); yy+=13; }); }
+  else { stc('#16a34a'); doc.text('Nenhum andaime liberado com pendência.',20,yy); }
+  np(); title('Onde mais falha'); var yb=48, pmax=D.pareto.length?D.pareto[0].n:1;
+  if(D.pareto.length){ D.pareto.forEach(function(x){ stc('#334155'); doc.setFontSize(12); doc.text(x.nome,20,yb+5); var bw=(x.n/pmax)*150; sfc('#2563eb'); doc.roundedRect(95,yb,Math.max(1,bw),7,1,1,'F'); stc('#0f172a'); doc.text(''+x.n,95+bw+4,yb+6); yb+=14; }); }
+  else { stc('#64748b'); doc.text('Nenhuma não conformidade registrada.',20,yb); }
+  np(); title('Concentração por regenerador'); var hmax=Math.max.apply(null,D.heat.map(function(h){return h.n;}).concat([1]));
+  D.heat.forEach(function(h,i){var x=20+i*67,col=h.n===0?'#16a34a':(h.n>=hmax*0.66?'#dc2626':(h.n>=hmax*0.33?'#d97706':'#16a34a')); sfc(col); doc.roundedRect(x,58,60,45,3,3,'F'); stc('#ffffff'); doc.setFont(undefined,'bold'); doc.setFontSize(28); doc.text(''+h.n,x+30,58+26,{align:'center'}); doc.setFont(undefined,'normal'); doc.setFontSize(11); doc.text(h.nome,x+30,58+38,{align:'center'});});
+  np(); title('Recomendações — time de montagem'); var yr=40; doc.setFontSize(11);
+  D.recs.forEach(function(r,i){ if(yr>190){ np(); title('Recomendações (cont.)'); yr=40; } stc('#2563eb'); doc.setFont(undefined,'bold'); doc.text((i+1)+'. '+r.t,20,yr); doc.setFont(undefined,'normal'); stc('#475569'); var ln=doc.splitTextToSize(r.x,262); doc.text(ln,25,yr+6); yr+=6+ln.length*5+7; });
+  D.ncFotos.filter(function(x){return x.fotos.length;}).slice(0,20).forEach(function(x){ np(); title('Plataforma '+x.cod+' — '+x.regen); stc('#dc2626'); doc.setFontSize(12); doc.text(doc.splitTextToSize('Não conforme: '+x.itens.join(', '),260),20,34);
+    x.fotos.slice(0,4).forEach(function(du,idx){var col=idx%2,row=Math.floor(idx/2),iw=125,ih=70,x0=20+col*(iw+8),y0=45+row*(ih+8); try{ doc.addImage(du,'JPEG',x0,y0,iw,ih); }catch(e){ sfc('#eef2f7'); doc.rect(x0,y0,iw,ih,'F'); } }); });
+  np(); stc('#0f172a'); doc.setFont(undefined,'bold'); doc.setFontSize(22); doc.text('Segurança é construída na montagem.',W/2,H/2,{align:'center'}); doc.setFont(undefined,'normal'); doc.setFontSize(11); stc('#64748b'); doc.text('SGIA — Sistema de Gestão de Integridade de Plataformas de Andaimes',W/2,H/2+12,{align:'center'});
+  doc.save('Apresentacao_Riscos_SGIA.pdf');
+  try{logAudit('Apresentação (PDF) gerada','Relatórios','Deck PDF por '+STATE.usuario.nome+'.');}catch(e){}
+}
+async function gerarApresentacaoPPTX(){
+  if(!window.PptxGenJS){toast('Biblioteca PowerPoint ainda carregando ou bloqueada. Tente novamente em instantes.','err');return;}
+  toast('Gerando PowerPoint...','ok');
+  var D=await _deckData();
+  var pptx=new PptxGenJS(); pptx.layout='LAYOUT_WIDE';
+  var RR=(pptx.ShapeType&&pptx.ShapeType.roundRect)||'roundRect';
+  var s=pptx.addSlide();
+  s.addText('SGIA • ANÁLISE DE RISCOS',{x:0.7,y:2.2,fontSize:14,color:'2563EB',bold:true});
+  s.addText('Riscos & Recomendações',{x:0.7,y:2.7,w:12,h:1,fontSize:40,color:'0F172A',bold:true});
+  s.addText(D.cliente,{x:0.7,y:3.9,fontSize:20,color:'475569'});
+  s.addText('Time de montagem • '+D.agora,{x:0.7,y:4.5,fontSize:12,color:'94A3B8'});
+  s=pptx.addSlide(); s.addText('Panorama de risco',{x:0.7,y:0.5,fontSize:28,bold:true,color:'0F172A'});
+  [['Disponibilidade',D.pctDisp+'%','16A34A'],['Liberado c/ pendência',''+D.libPendN,'DC2626'],['Inspeções vencidas',''+D.vencidas,'D97706'],['Itens não conformes',''+D.totalNC,'2563EB']].forEach(function(k,i){var x=0.7+i*3.1; s.addShape(RR,{x:x,y:2,w:2.9,h:2.2,fill:{color:'F8FAFC'},line:{color:'E5E7EB',width:0.5},rectRadius:0.1}); s.addText(k[1],{x:x,y:2.3,w:2.9,h:1,fontSize:36,bold:true,color:k[2],align:'center'}); s.addText(k[0],{x:x,y:3.45,w:2.9,h:0.5,fontSize:12,color:'475569',align:'center'});});
+  s=pptx.addSlide(); s.addText('Risco oculto: liberado com pendência',{x:0.7,y:0.5,fontSize:26,bold:true,color:'DC2626'});
+  if(D.libPend.length){ D.libPend.slice(0,10).forEach(function(p,i){ s.addText([{text:p.cod+'   ',options:{bold:true,color:'16A34A'}},{text:p.motivo,options:{color:'334155'}}],{x:0.8,y:1.5+i*0.52,w:11.8,h:0.5,fontSize:14}); }); }
+  else s.addText('Nenhum andaime liberado com pendência.',{x:0.8,y:1.6,fontSize:16,color:'16A34A'});
+  s=pptx.addSlide(); s.addText('Onde mais falha',{x:0.7,y:0.5,fontSize:28,bold:true,color:'0F172A'});
+  var pmax=D.pareto.length?D.pareto[0].n:1;
+  if(D.pareto.length){ D.pareto.forEach(function(x,i){var y=1.6+i*0.72; s.addText(x.nome,{x:0.8,y:y,w:2.8,h:0.5,fontSize:14,color:'334155'}); var bw=Math.max(0.1,(x.n/pmax)*6.5); s.addShape(RR,{x:3.8,y:y+0.04,w:bw,h:0.42,fill:{color:'2563EB'},rectRadius:0.05}); s.addText(''+x.n,{x:3.8+bw+0.1,y:y,w:1,h:0.5,fontSize:14,bold:true,color:'0F172A'});}); }
+  else s.addText('Nenhuma não conformidade registrada.',{x:0.8,y:1.6,fontSize:16,color:'64748B'});
+  s=pptx.addSlide(); s.addText('Concentração por regenerador',{x:0.7,y:0.5,fontSize:28,bold:true,color:'0F172A'});
+  var hmax=Math.max.apply(null,D.heat.map(function(h){return h.n;}).concat([1]));
+  D.heat.forEach(function(h,i){var x=0.7+i*3.1,col=h.n===0?'16A34A':(h.n>=hmax*0.66?'DC2626':(h.n>=hmax*0.33?'D97706':'16A34A')); s.addShape(RR,{x:x,y:2,w:2.9,h:2.4,fill:{color:col},rectRadius:0.1}); s.addText(''+h.n,{x:x,y:2.5,w:2.9,h:1,fontSize:40,bold:true,color:'FFFFFF',align:'center'}); s.addText(h.nome,{x:x,y:3.7,w:2.9,h:0.5,fontSize:14,color:'FFFFFF',align:'center'});});
+  s=pptx.addSlide(); s.addText('Recomendações — time de montagem',{x:0.7,y:0.4,fontSize:26,bold:true,color:'0F172A'});
+  D.recs.slice(0,7).forEach(function(r,i){ s.addText([{text:(i+1)+'. '+r.t+'  ',options:{bold:true,color:'2563EB'}},{text:r.x,options:{color:'475569'}}],{x:0.8,y:1.2+i*0.8,w:11.9,h:0.75,fontSize:13,valign:'top'}); });
+  D.ncFotos.filter(function(x){return x.fotos.length;}).slice(0,20).forEach(function(x){ var sf=pptx.addSlide(); sf.addText('Plataforma '+x.cod+' — '+x.regen,{x:0.7,y:0.35,fontSize:24,bold:true,color:'0F172A'}); sf.addText('Não conforme: '+x.itens.join(', '),{x:0.7,y:1.05,w:12,h:0.5,fontSize:14,color:'DC2626'});
+    x.fotos.slice(0,4).forEach(function(du,idx){var col=idx%2,row=Math.floor(idx/2); try{ sf.addImage({data:du,x:0.7+col*6.25,y:1.7+row*2.75,w:6,h:2.6}); }catch(e){} }); });
+  s=pptx.addSlide(); s.addText('Segurança é construída na montagem.',{x:0,y:3,w:13.33,h:1,fontSize:28,bold:true,color:'0F172A',align:'center'}); s.addText('SGIA — Sistema de Gestão de Integridade de Plataformas de Andaimes',{x:0,y:4,w:13.33,h:0.5,fontSize:13,color:'64748B',align:'center'});
+  try{ await pptx.writeFile({fileName:'Apresentacao_Riscos_SGIA.pptx'}); }catch(e){ toast('Falha ao gerar o PowerPoint.','err'); return; }
+  try{logAudit('Apresentação (PPTX) gerada','Relatórios','Deck PPTX por '+STATE.usuario.nome+'.');}catch(e){}
+}
+
 
 
 </script>
@@ -2541,7 +2643,12 @@ function renderRelatorios(){
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="chkAud"> Trilha de auditoria</label>
       </div>
       <button class="btn-sm" onclick="gerarRelatorioAnalise()">🖨️ Gerar relatório</button></div>
-    <div class="rep-card"><div class="ric">🎯</div><h4>Apresentação de Riscos</h4><p>Slides automáticos de riscos e recomendações para o time de montagem. Navegue com as setas e imprima ou salve em PDF.</p><button class="btn-sm" onclick="gerarApresentacaoRiscos()">▶️ Gerar apresentação</button></div>
+    <div class="rep-card"><div class="ric">🎯</div><h4>Apresentação de Riscos</h4><p>Slides automáticos de riscos e recomendações para o time de montagem, já com as fotos das não conformidades. Abra na tela ou baixe.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <button class="btn-sm" onclick="gerarApresentacaoRiscos()">▶️ Apresentar</button>
+        <button class="btn-sm sec" onclick="gerarApresentacaoPDF()">📄 PDF</button>
+        <button class="btn-sm sec" onclick="gerarApresentacaoPPTX()">📊 PowerPoint</button>
+      </div></div>
     <div class="rep-card"><div class="ric">📅</div><h4>Relatório Semanal</h4><p>Resumo consolidado da semana com status de todas as plataformas.</p><button class="btn-sm" onclick="gerarPDF('semanal')">Gerar PDF</button></div>
     ${temPerm('admin')?`<div class="rep-card"><div class="ric">🏷️</div><h4>Etiquetas QR (folha A4)</h4><p>Folha A4 com QR Code + identificação das plataformas, pronta para imprimir e colar em campo.</p>
       <select id="etqRegen" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--txt);margin-bottom:10px">

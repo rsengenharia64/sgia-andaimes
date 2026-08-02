@@ -958,6 +958,7 @@ function ultimaAtualizacao(){
    ==================================================================== */
 function renderDashboard(){
   if(STATE.usuario&&STATE.usuario.real&&!STATE.platCarregado){platCarregar();}
+  if(STATE.usuario&&STATE.usuario.real&&!STATE.segCarregado){segCarregar();}
   const s=stats();
   const c=document.getElementById('content');
   // barra de disponibilidade proporcional
@@ -1034,8 +1035,116 @@ function renderDashboard(){
       <span>🕓 Última atualização: <b style="color:var(--txt2)">${ultimaAtualizacao()}</b></span>
       <span>${s.vencidas} inspeção(ões) vencida(s)</span>
     </div>
-  </div>`;
+  </div>
+  <div id="indicadoresWrap" style="margin-top:2px"></div>`;
+  renderIndicadores();
 }
+
+/* ===== INDICADORES — Integridade & Segurança (dado real) ===== */
+var P_DARK={card:'#161b22',card2:'#1c2330',t1:'#e6edf3',t2:'#9aa7b4',t3:'#6b7785',line:'#2a3441',track:'#0d1117',green:'#3fb950',amber:'#d29922',red:'#f85149',blue:'#2f81f7'};
+var P_PRINT={card:'#ffffff',card2:'#f8fafc',t1:'#0f172a',t2:'#475569',t3:'#64748b',line:'#e5e7eb',track:'#eef2f7',green:'#16a34a',amber:'#d97706',red:'#dc2626',blue:'#2563eb'};
+function _indData(){
+  var plats=platsAtivas();
+  var total=plats.length;
+  var libs=plats.filter(function(p){return p.status==='liberada';}).length;
+  var pctDisp= total? Math.round(libs/total*100):0;
+  var vencidas=plats.filter(function(p){return p.proxInspecao && diasEntre(hoje(),p.proxInspecao)<0 && p.status!=='pendente';}).length;
+  var libPend=[];
+  plats.forEach(function(p){
+    if(p.status!=='liberada') return;
+    var ncItens=CONFIG.checklist.filter(function(it){return p.checklist && p.checklist[it.id]==='nao_conforme';}).map(function(it){return it.nome;});
+    var vencida=p.proxInspecao && diasEntre(hoje(),p.proxInspecao)<0;
+    var semInsp=!p.inspecionada;
+    if(ncItens.length||vencida||semInsp){
+      var motivo = ncItens.length ? ('Item reprovado: '+ncItens.join(', '))
+        : (vencida ? ('Inspeção vencida há '+Math.abs(diasEntre(hoje(),p.proxInspecao))+' dia(s)')
+        : 'Liberada sem inspeção registrada');
+      libPend.push({cod:p.cod,regen:p.regenNome||'',motivo:motivo});
+    }
+  });
+  var totalNC=0; plats.forEach(function(p){ CONFIG.checklist.forEach(function(it){ if(p.checklist && p.checklist[it.id]==='nao_conforme') totalNC++; }); });
+  var pareto=CONFIG.checklist.map(function(it){ var n=plats.filter(function(p){return p.checklist && p.checklist[it.id]==='nao_conforme';}).length; return {nome:it.nome,ic:it.ic,n:n}; }).filter(function(x){return x.n>0;}).sort(function(a,b){return b.n-a.n;});
+  var REA=['quase']; var pro=0,rea=0;
+  (STATE.ocorrencias||[]).forEach(function(o){ if(REA.indexOf(o.categoria)>=0) rea++; else pro++; });
+  var ocsAbertas=(STATE.ocorrencias||[]).filter(function(o){return o.situacao!=='encerrada';}).length;
+  var recorr=plats.map(function(p){ var n=(p.historico||[]).filter(function(h){return h.acao==='Inspeção realizada' && /Não conformidade/i.test(h.detalhe||'');}).length; return {cod:p.cod,n:n}; }).filter(function(x){return x.n>0;}).sort(function(a,b){return b.n-a.n;}).slice(0,6);
+  var heat=CONFIG.regeneradores.map(function(r){ var n=plats.filter(function(p){return p.regen===r.id && (p.status==='restrita'||p.status==='interditada');}).length; return {nome:r.nome,n:n}; });
+  return {total:total,libs:libs,pctDisp:pctDisp,vencidas:vencidas,libPend:libPend,totalNC:totalNC,pareto:pareto,pro:pro,rea:rea,ocsAbertas:ocsAbertas,recorr:recorr,heat:heat};
+}
+function _indCard(title,sub,inner,P){
+  return '<div style="background:'+P.card+';border:0.5px solid '+P.line+';border-radius:12px;padding:1rem 1.25rem;margin:0 0 1rem">'
+    +'<div style="font-size:14px;font-weight:600;color:'+P.t1+'">'+title+'</div>'
+    +'<div style="font-size:12px;color:'+P.t3+';margin-bottom:10px">'+sub+'</div>'+inner+'</div>';
+}
+function _indBlocksHTML(P){
+  var d=_indData();
+  function bar(w,color){return '<div style="flex:1;background:'+P.track+';border-radius:6px;height:16px;overflow:hidden"><div style="width:'+w+'%;height:100%;background:'+color+'"></div></div>';}
+  var alarmRows = d.libPend.slice(0,6).map(function(x){
+    return '<div style="display:flex;align-items:center;gap:10px;font-size:13px;padding:6px 0;border-top:0.5px solid '+P.line+'">'
+      +'<span style="background:'+P.green+';color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">'+x.cod+'</span>'
+      +'<span style="color:'+P.t2+';flex:1">'+x.motivo+'</span></div>';
+  }).join('');
+  if(!d.libPend.length) alarmRows='<div style="font-size:13px;color:'+P.t2+';padding-top:8px">Nenhum andaime liberado com pendência. Tudo consistente.</div>';
+  var alarm='<div style="background:'+P.card2+';border:2px solid '+P.red+';border-radius:12px;padding:1rem 1.25rem;margin:0 0 1rem">'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">'
+    +'<div><div style="font-size:13px;font-weight:700;color:'+P.red+'">&#9888;&#65039; Risco oculto — Liberado com pendência</div>'
+    +'<div style="font-size:12px;color:'+P.t3+';margin-top:2px">Placa verde onde a evidência não fecha</div></div>'
+    +'<div style="text-align:right;line-height:1"><div style="font-size:30px;font-weight:700;color:'+P.t1+'">'+d.libPend.length+'</div><div style="font-size:11px;color:'+P.t3+'">andaime(s)</div></div></div>'
+    +'<div style="margin-top:10px">'+alarmRows+'</div></div>';
+  function kpi(lab,val,sub){return '<div style="background:'+P.card2+';border-radius:10px;padding:1rem"><div style="font-size:13px;color:'+P.t2+'">'+lab+'</div><div style="font-size:24px;font-weight:600;color:'+P.t1+';margin-top:4px">'+val+'</div><div style="font-size:11px;color:'+P.t3+';margin-top:2px">'+sub+'</div></div>';}
+  var kpis='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:0 0 1rem">'
+    +kpi('Disponibilidade',d.pctDisp+'%','meta 85%')
+    +kpi('Inspeções vencidas',d.vencidas,'andaimes atrasados')
+    +kpi('Itens não conformes',d.totalNC,'no checklist')
+    +kpi('Ocorrências abertas',d.ocsAbertas,'segurança')
+    +'</div>';
+  var pmax=d.pareto.length?d.pareto[0].n:1;
+  var pareto=d.pareto.map(function(x){var w=Math.round(x.n/pmax*100);
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="width:118px;font-size:12.5px;color:'+P.t2+'">'+x.ic+' '+x.nome+'</span>'+bar(w,P.blue)+'<span style="width:26px;text-align:right;font-size:12px;font-weight:600;color:'+P.t1+'">'+x.n+'</span></div>';}).join('');
+  if(!d.pareto.length) pareto='<div style="font-size:13px;color:'+P.t2+'">Nenhuma não conformidade registrada.</div>';
+  var paretoCard=_indCard('Tipo de não conformidade','Onde mais reprova (por item do checklist)',pareto,P);
+  var tot=d.pro+d.rea; var pw= tot? Math.round(d.pro/tot*100):0;
+  var proa = tot ? ('<div style="display:flex;height:20px;border-radius:6px;overflow:hidden;margin-bottom:8px"><div style="width:'+pw+'%;background:'+P.green+'"></div><div style="width:'+(100-pw)+'%;background:'+P.amber+'"></div></div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:12px;color:'+P.t2+'"><span>&#128994; Proativas '+d.pro+'</span><span>&#128992; Reativas '+d.rea+'</span></div>')
+    : ('<div style="font-size:13px;color:'+P.t2+'">Sem ocorrências de segurança no período.</div>');
+  var proaCard=_indCard('Proativo × Reativo','Prevenção vs. reação',proa,P);
+  var rmax=d.recorr.length?d.recorr[0].n:1;
+  var recorr=d.recorr.map(function(x){var w=Math.round(x.n/rmax*100);
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="width:34px;font-size:12px;font-weight:700;color:'+P.t1+'">'+x.cod+'</span>'+bar(w,P.red)+'<span style="width:34px;text-align:right;font-size:12px;color:'+P.t2+'">'+x.n+'&#215;</span></div>';}).join('');
+  if(!d.recorr.length) recorr='<div style="font-size:13px;color:'+P.t2+'">Sem histórico de reincidência ainda.</div>';
+  var recorrCard=_indCard('Recorrência','Plataformas que mais reprovaram',recorr,P);
+  var hmax=Math.max.apply(null,d.heat.map(function(h){return h.n;}).concat([1]));
+  var heat=d.heat.map(function(h){var col= h.n===0?P.green:(h.n>=hmax*0.66?P.red:(h.n>=hmax*0.33?P.amber:P.green));
+    return '<div style="background:'+col+';border-radius:8px;padding:12px 8px;text-align:center;color:#fff"><div style="font-size:22px;font-weight:700">'+h.n+'</div><div style="font-size:11px;opacity:.9">'+h.nome+'</div></div>';}).join('');
+  var heatCard=_indCard('Mapa de calor por regenerador','Restrições + interdições por equipamento','<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">'+heat+'</div>',P);
+  var twoCol='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:12px;margin:0 0 1rem">'+proaCard+recorrCard+'</div>';
+  return alarm+kpis+paretoCard+twoCol+heatCard;
+}
+function renderIndicadores(){
+  var el=document.getElementById('indicadoresWrap'); if(!el) return;
+  var btn = temPerm('relatorios') ? '<button class="btn-sm sec" onclick="imprimirIndicadores()">🖨️ Imprimir indicadores</button>' : '';
+  el.innerHTML='<div class="panel"><div class="panel-head"><div><h4>🎯 Indicadores de Integridade &amp; Segurança</h4><div class="sub">Análise além do estado atual</div></div>'+btn+'</div>'+_indBlocksHTML(P_DARK)+'</div>';
+}
+function imprimirIndicadores(){
+  var w=window.open('','_blank');
+  if(!w){ toast('Permita pop-ups para imprimir o relatório.','err'); return; }
+  var agora=new Date().toLocaleDateString('pt-BR')+' '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  var body=_indBlocksHTML(P_PRINT);
+  var doc='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Indicadores SGIA</title>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Segoe UI,Arial,sans-serif;background:#fff;color:#0f172a;padding:24px;max-width:840px;margin:0 auto}'
+    +'.hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:18px}'
+    +'.hd h1{font-size:18px}@media print{.noprint{display:none}}</style></head><body>'
+    +'<div class="hd"><div><h1>Relatório de Indicadores — Integridade &amp; Segurança</h1>'
+    +'<div style="font-size:12px;color:#64748b;margin-top:4px">'+CONFIG.cliente+' &bull; SGIA</div></div>'
+    +'<div style="font-size:12px;color:#64748b;text-align:right">Gerado em<br><b style="color:#0f172a">'+agora+'</b></div></div>'
+    +body
+    +'<div style="margin-top:16px;font-size:11px;color:#94a3b8;text-align:center">SGIA — Sistema de Gestão de Integridade de Plataformas de Andaimes</div>'
+    +'<div class="noprint" style="text-align:center;margin-top:20px"><button onclick="window.print()" style="padding:10px 22px;font-size:14px;border:none;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer">🖨️ Imprimir / Salvar PDF</button></div>'
+    +'</body></html>';
+  w.document.open(); w.document.write(doc); w.document.close();
+  try{ logAudit('Indicadores impressos','Dashboard','Relatório de indicadores gerado por '+STATE.usuario.nome+'.'); }catch(e){}
+}
+
 </script>
 
 <script>
@@ -1970,6 +2079,7 @@ async function segCarregar(){
     STATE.ocorrencias=(data||[]).map(_ocDbToApp);
     STATE.segCarregado=true;
     if(typeof currentPage!=='undefined' && currentPage==='seguranca') renderSeguranca();
+    if(typeof currentPage!=='undefined' && currentPage==='dashboard' && typeof renderIndicadores==='function') renderIndicadores();
   }catch(e){ console.warn('segCarregar',e); }
 }
 function renderSeguranca(){

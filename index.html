@@ -1466,7 +1466,7 @@ function togglePlataforma(cod){
   const p=STATE.plataformas.find(x=>x.cod===cod);if(!p)return;
   p.ativo = p.ativo===false ? true : false;
   const agora=hoje();
-  p.historico.unshift({data:agora,usuario:STATE.usuario.nome,acao:p.ativo?"Plataforma ativada":"Plataforma desativada",status:null,detalhe:`${p.ativo?'Ativada':'Desativada'} por ${STATE.usuario.nome} em ${fmtDataHora(agora)}.`});
+  _addHist(p,{data:agora,usuario:STATE.usuario.nome,acao:p.ativo?"Plataforma ativada":"Plataforma desativada",status:null,detalhe:`${p.ativo?'Ativada':'Desativada'} por ${STATE.usuario.nome} em ${fmtDataHora(agora)}.`});
   logAudit(p.ativo?"Plataforma ativada":"Plataforma desativada",`Plataforma ${cod}`,`Por ${STATE.usuario.nome}`);
   toast(`Plataforma ${cod} ${p.ativo?'ativada':'desativada'}.`,"ok");
   platSalvar(p);
@@ -1523,6 +1523,7 @@ async function salvarNovaPlataforma(){
   const cod=document.getElementById('npCod').value.trim().toUpperCase();
   const status=document.getElementById('npStatus').value;
   if(!cod){toast("Informe o código da plataforma.","err");return;}
+  if(!/^[0-9A-Z]{2,6}$/.test(cod)){toast("Código inválido. Use 2 a 6 letras/números (ex: 1A, 2AA).","err");return;}
   if(STATE.plataformas.find(p=>p.cod===cod)){toast(`A plataforma ${cod} já existe.`,"err");return;}
   const reg=CONFIG.regeneradores.find(r=>r.id===rid);
   // índice para posicionamento: nº de plataformas já no regenerador
@@ -1753,7 +1754,7 @@ async function platSalvar(p){
       status:p.status, inspecionada:!!p.inspecionada, ativo:p.ativo!==false,
       ult_inspecao:p.ultInspecao||null, prox_inspecao:p.proxInspecao||null,
       responsavel:p.responsavel||null, obs:p.obs||null,
-      checklist:p.checklist||{}, historico:p.historico||[], pos_mapa:p.posMapa||{},
+      checklist:p.checklist||{}, pos_mapa:p.posMapa||{},
       updated_by:STATE.usuario.id
     }).eq('id',p.dbId);
     if(error) throw error;
@@ -1761,6 +1762,17 @@ async function platSalvar(p){
   }catch(e){ console.warn('platSalvar',e); try{toast('Falha ao salvar no servidor. Verifique a conexão e tente de novo.','err');}catch(_){} return false; }
 }
 async function platSalvarVarios(lista){ for(const p of (lista||[])){ await platSalvar(p); } }
+/* AUD-003: histórico gravado por APPEND atômico no banco (evita perda por concorrência) */
+async function _platEvento(p, ev){
+  if(!(STATE.usuario && STATE.usuario.real && p && p.dbId)) return true;
+  try{ const sb=sbClient(); const {error}=await sb.rpc('sgia_plat_evento',{p_id:p.dbId, p_evento:ev, p_by:STATE.usuario.id}); if(error) throw error; return true; }
+  catch(e){ console.warn('_platEvento',e); try{toast('Falha ao registrar no histórico. Verifique a conexão.','err');}catch(_){} return false; }
+}
+function _addHist(p, ev){
+  if(!ev.id) ev.id=uid();
+  p.historico.unshift(ev);
+  return _platEvento(p, ev);
+}
 async function platExcluir(p){
   if(!STATE.usuario || !STATE.usuario.real || !p || !p.dbId) return;
   try{ const sb=sbClient(); await sb.from('plataformas').update({excluido_em:new Date().toISOString()}).eq('id',p.dbId); }
@@ -1812,19 +1824,21 @@ async function salvarInspecao(btn){
 
   // registra no histórico da plataforma
   const nc=Object.entries(p.checklist).filter(([k,v])=>v==='nao_conforme').map(([k])=>CONFIG.checklist.find(c=>c.id===k).nome);
-  p.historico.unshift({
+  var _ev={ id:uid(),
     data:hoje(), usuario:STATE.usuario.nome, acao:"Inspeção realizada", status:p.status,
     detalhe: nc.length?`Não conformidades: ${nc.join(', ')}.`:"Todos os itens conformes."
-  });
+  };
+  p.historico.unshift(_ev);
 
   // salva de fato e só confirma sucesso quando o servidor confirmar
   let _txt=null;
   if(btn){ _txt=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando…'; }
-  const ok=await platSalvar(p);
+  const okScalar=await platSalvar(p);
+  const okEv=(okScalar===false)?false:await _platEvento(p,_ev);
   if(btn){ btn.disabled=false; btn.textContent=_txt||'💾 Salvar inspeção'; }
-  if(ok===false){
+  if(okScalar===false || okEv===false){
     // remove o registro otimista do histórico para não confundir e mantém a ficha aberta com tudo preenchido
-    if(p.historico && p.historico.length) p.historico.shift();
+    if(p.historico && p.historico.length && p.historico[0]===_ev) p.historico.shift();
     p.inspecionada=false;
     toast('Não foi possível salvar agora. Verifique a conexão e toque em Salvar novamente — seus dados continuam preenchidos.','err');
     return;
@@ -1918,8 +1932,7 @@ async function addFotos(ev){
   }
   if(okc){
     logAudit("Fotos anexadas",`Plataforma ${p.cod}`,`${okc} foto(s) adicionada(s).`);
-    p.historico.unshift({data:hoje(),usuario:STATE.usuario.nome,acao:"Evidência fotográfica",status:null,detalhe:`${okc} foto(s) anexada(s).`});
-    if(real && p.dbId) platSalvar(p);
+    _addHist(p,{data:hoje(),usuario:STATE.usuario.nome,acao:"Evidência fotográfica",status:null,detalhe:`${okc} foto(s) anexada(s).`});
     toast(`${okc} foto(s) anexada(s)!`,"ok");
     drawModal();
   }
@@ -1934,12 +1947,11 @@ function delFoto(id){
   p.fotos=p.fotos.filter(f=>f.id!==id);
   const agora=hoje();
   // registro detalhado no histórico da plataforma (usuário, data e hora)
-  p.historico.unshift({
+  _addHist(p,{
     data:agora, usuario:STATE.usuario.nome, acao:"Foto excluída", status:null,
     detalhe:`Evidência removida por ${STATE.usuario.nome} em ${fmtDataHora(agora)} (foto anexada em ${fmtData(foto.data)} por ${foto.autor}).`
   });
   logAudit("Foto excluída",`Plataforma ${p.cod}`,`Removida por ${STATE.usuario.nome} em ${fmtDataHora(agora)}.`);
-  if(STATE.usuario&&STATE.usuario.real&&p.dbId) platSalvar(p);
   toast("Foto excluída e registrada no histórico.","ok");
   drawModal();
 }
@@ -3212,6 +3224,7 @@ async function salvarUsuario(id){
         if(String(STATE.usuario.id)===String(id)){ STATE.usuario.perfil=perfil; STATE.usuario.permsAdd=permsAdd; STATE.usuario.permsRemove=permsRemove; aplicarSessao(); }
       }else{ // convidar/criar via Edge Function
         if(!email){toast('Informe o e-mail.','err');return;}
+        if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){toast('E-mail inválido.','err');return;}
         const modoEl=document.getElementById('nuModo'); const modo=modoEl?modoEl.value:'senha';
         const senhaEl=document.getElementById('nuSenha'); const senha=senhaEl?senhaEl.value.trim():'';
         const forcarEl=document.getElementById('nuForcar'); const forcarTroca=forcarEl?forcarEl.checked:true;
@@ -3389,7 +3402,7 @@ async function configCarregar(){
 function salvarConfig(){
   CONFIG.empresa=document.getElementById('cfgEmpresa').value;
   CONFIG.cliente=document.getElementById('cfgCliente').value;
-  CONFIG.prazoInspecaoDias=+document.getElementById('cfgPrazo').value||7;
+  CONFIG.prazoInspecaoDias=Math.max(1,Math.min(365,Math.round(+document.getElementById('cfgPrazo').value||7)));
   logAudit("Parâmetros alterados","Configurações","");
   if(STATE.usuario && STATE.usuario.real) configSalvar();
   toast("Parâmetros salvos!","ok");

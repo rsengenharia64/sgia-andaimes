@@ -959,6 +959,8 @@ async function _filaExec(op){
   try{ var sb=sbClient();
     if(op.kind==='platScalar'){ var r=await sb.from('plataformas').update(op.fields).eq('id',op.dbId); if(r.error) throw r.error; return true; }
     if(op.kind==='platEvento'){ var r2=await sb.rpc('sgia_plat_evento',{p_id:op.dbId,p_evento:op.ev,p_by:op.by}); if(r2.error) throw r2.error; return true; }
+    if(op.kind==='ocInsert'){ var r3=await sb.from('ocorrencias_seguranca').upsert(op.rec,{onConflict:'id'}); if(r3.error) throw r3.error; return true; }
+    if(op.kind==='ocUpdate'){ var r4=await sb.from('ocorrencias_seguranca').update(op.fields).eq('id',op.ocId); if(r4.error) throw r4.error; return true; }
     return true;
   }catch(e){ console.warn('_filaExec',e); return false; }
 }
@@ -2587,6 +2589,23 @@ async function salvarOcorrencia(isNew){
 
   // ---- MODO REAL: grava no Supabase ----
   if(STATE.usuario && STATE.usuario.real){
+    if(!navigator.onLine){
+      var _ctr=STATE.contratoId;
+      if(!_ctr){ toast('Sem conexão e sem contrato carregado. Abra o sistema online uma vez antes de registrar offline.','err'); return; }
+      if(isNew){
+        var _cid=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():('oc'+Date.now()+Math.random().toString(36).slice(2));
+        _filaAdd({id:uid(),kind:'ocInsert',rec:{id:_cid,contrato_id:_ctr,categoria:cat,situacao:sit,local:local,descricao:desc,acao_corretiva:acao,acao_responsavel:acaoResp,autor:autor||STATE.usuario.nome,registrado_por_id:STATE.usuario.id,created_by:STATE.usuario.id,updated_by:STATE.usuario.id}});
+        STATE.ocorrencias.unshift({id:_cid,data:new Date().toISOString(),categoria:cat,situacao:sit,local:local,descricao:desc,acaoCorretiva:acao,acaoResponsavel:acaoResp,autor:autor||STATE.usuario.nome,responsavel:STATE.usuario.nome,fotos:_ocFotosTmp||[]});
+        _ocFotosTmp=null;
+      }else{
+        var _oid=STATE.segAtual.id;
+        _filaAdd({id:uid(),kind:'ocUpdate',ocId:_oid,fields:{categoria:cat,situacao:sit,local:local,descricao:desc,acao_corretiva:acao,acao_responsavel:acaoResp,autor:autor,updated_by:STATE.usuario.id}});
+        var _o=STATE.segAtual;_o.categoria=cat;_o.situacao=sit;_o.local=local;_o.descricao=desc;_o.acaoCorretiva=acao;_o.acaoResponsavel=acaoResp;_o.autor=autor;
+      }
+      logAudit(isNew?"Ocorrência registrada (offline)":"Ocorrência atualizada (offline)",catNome(cat),"Aguardando sincronização.");
+      toast('Sem conexão: registro salvo no aparelho e será sincronizado ao reconectar.','ok');
+      fecharModal(); renderSeguranca(); return;
+    }
     try{
       const sb=sbClient();
       await segGarantirContrato(sb);

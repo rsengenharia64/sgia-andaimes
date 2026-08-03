@@ -571,6 +571,9 @@ function fmtDataHora(d){if(!d)return "—";const x=_parseData(d);return isNaN(x)
 function addDias(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function diasEntre(a,b){return Math.floor((new Date(b)-new Date(a))/(1000*60*60*24));}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];});}
+window.addEventListener('error',function(ev){ try{ if(ev&&ev.error&&typeof toast==='function') toast('Ocorreu um erro inesperado. Se persistir, recarregue a página (Ctrl+F5).','err'); }catch(_){} });
+window.addEventListener('unhandledrejection',function(ev){ try{ console.warn('promise rejeitada:', ev&&ev.reason); }catch(_){} });
 function temPerm(p){
   if(!STATE.usuario) return false;
   const pf=PERFIS[STATE.usuario.perfil];
@@ -1195,7 +1198,7 @@ function _recomendacoes(){
 }
 function _tbl(cols,rows){
   var th=cols.map(function(c){return '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #cbd5e1;font-size:11px;color:#475569;white-space:nowrap">'+c+'</th>';}).join('');
-  var tr=rows.map(function(r){return '<tr>'+r.map(function(c){return '<td style="padding:6px 8px;border-bottom:0.5px solid #e5e7eb;font-size:11.5px;color:#0f172a;vertical-align:top">'+c+'</td>';}).join('')+'</tr>';}).join('');
+  var tr=rows.map(function(r){return '<tr>'+r.map(function(c){return '<td style="padding:6px 8px;border-bottom:0.5px solid #e5e7eb;font-size:11.5px;color:#0f172a;vertical-align:top">'+esc(c)+'</td>';}).join('')+'</tr>';}).join('');
   return '<table style="width:100%;border-collapse:collapse;margin:6px 0 14px">'+'<thead><tr>'+th+'</tr></thead><tbody>'+tr+'</tbody></table>';
 }
 function gerarRelatorioAnalise(){
@@ -1614,8 +1617,8 @@ function drawModalTab(p,podeInsp,podeFoto){
       <div class="panel" style="background:var(--bg);margin-bottom:16px">
         <div class="panel-head"><h4>Observações</h4></div>
         ${podeInsp
-          ? `<textarea id="obsField" rows="3" style="width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:11px;color:var(--txt);outline:none;resize:vertical" placeholder="Anotações sobre a plataforma...">${p.obs||''}</textarea>`
-          : `<p style="color:var(--txt2);font-size:13.5px">${p.obs||'Sem observações.'}</p>`}
+          ? `<textarea id="obsField" rows="3" style="width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:11px;color:var(--txt);outline:none;resize:vertical" placeholder="Anotações sobre a plataforma...">${esc(p.obs)}</textarea>`
+          : `<p style="color:var(--txt2);font-size:13.5px">${p.obs?esc(p.obs):'Sem observações.'}</p>`}
       </div>
 
       ${podeInsp?`
@@ -1668,7 +1671,7 @@ function drawModalTab(p,podeInsp,podeFoto){
         <div class="foto-thumb">
           <img src="${f.src}" onclick="openLightbox('${f.src}')">
           ${podeDel?`<button class="fdel" onclick="delFoto('${f.id}')" title="Excluir foto (somente Administrador)">🗑️</button>`:''}
-          <div class="fcap">${fmtData(f.data)} • ${f.autor.split(' ')[0]}</div>
+          <div class="fcap">${fmtData(f.data)} • ${esc((f.autor||'').split(' ')[0])}</div>
         </div>`).join('')}</div>`
       :`<div class="empty"><div class="eic">📷</div>Nenhuma foto anexada ainda.</div>`}
     </div>`;
@@ -1681,9 +1684,9 @@ function drawModalTab(p,podeInsp,podeFoto){
     return `<div class="mtab active"><div class="tl">${hist.map(h=>{
       const k=STATUS_MAP[h.status]?STATUS_MAP[h.status].key:'';
       return `<div class="tl-item ${k}">
-        <div class="tlh">${h.acao} ${h.status?`<span class="badge ${STATUS_MAP[h.status].badge}">${STATUS_MAP[h.status].label}</span>`:''}</div>
-        <div class="tlm">${fmtDataHora(h.data)} • ${h.usuario}</div>
-        <div class="tld">${h.detalhe}</div>
+        <div class="tlh">${esc(h.acao)} ${h.status?`<span class="badge ${STATUS_MAP[h.status].badge}">${STATUS_MAP[h.status].label}</span>`:''}</div>
+        <div class="tlm">${fmtDataHora(h.data)} • ${esc(h.usuario)}</div>
+        <div class="tld">${esc(h.detalhe)}</div>
       </div>`;
     }).join('')}</div></div>`;
   }
@@ -1755,7 +1758,7 @@ async function platSalvar(p){
     }).eq('id',p.dbId);
     if(error) throw error;
     return true;
-  }catch(e){ console.warn('platSalvar',e); return false; }
+  }catch(e){ console.warn('platSalvar',e); try{toast('Falha ao salvar no servidor. Verifique a conexão e tente de novo.','err');}catch(_){} return false; }
 }
 async function platSalvarVarios(lista){ for(const p of (lista||[])){ await platSalvar(p); } }
 async function platExcluir(p){
@@ -2365,11 +2368,11 @@ function drawOcorrencias(){
         <span class="seg-cat">${catIc(o.categoria)} ${catNome(o.categoria)}</span>
         <span class="sit-badge ${SIT_MAP[o.situacao].cls}">${SIT_MAP[o.situacao].label}</span>
       </div>
-      <div class="sc-desc">${o.descricao}</div>
+      <div class="sc-desc">${esc(o.descricao)}</div>
       <div class="sc-meta">
-        <span>📍 ${o.local||'—'}</span>
-        <span>👤 ${o.autor||o.responsavel}</span>
-        ${o.acaoResponsavel?`<span>🛠️ ${o.acaoResponsavel}</span>`:''}
+        <span>📍 ${esc(o.local)||'—'}</span>
+        <span>👤 ${esc(o.autor||o.responsavel)}</span>
+        ${o.acaoResponsavel?`<span>🛠️ ${esc(o.acaoResponsavel)}</span>`:''}
         <span>🕓 ${fmtDataHora(o.data)}</span>
         ${o.fotos.length?`<span>📷 ${o.fotos.length} foto(s)</span>`:''}
       </div>
@@ -2385,7 +2388,7 @@ function drawOcorrenciaModal(o){
   box.innerHTML=`
     <div class="modal-head">
       <div><div class="mt">🦺 ${isNew?'Novo registro de segurança':'Ocorrência de segurança'}</div>
-      <div class="mc">${isNew?'Preencha os dados da ocorrência':fmtDataHora(o.data)+' • '+(o.autor||o.responsavel)}</div></div>
+      <div class="mc">${isNew?'Preencha os dados da ocorrência':fmtDataHora(o.data)+' • '+esc(o.autor||o.responsavel)}</div></div>
       <button class="modal-x" onclick="fecharModal()">✕</button>
     </div>
     <div class="modal-body">
@@ -2404,16 +2407,16 @@ function drawOcorrenciaModal(o){
       </div>
       <div class="row-2">
         <div class="field"><label>Autor do registro</label>
-          <input id="ocAutor" value="${v('autor', isNew?STATE.usuario.nome:'')}" placeholder="Quem identificou / praticou a segurança" ${!podeReg?'disabled':''}></div>
+          <input id="ocAutor" value="${esc(v('autor', isNew?STATE.usuario.nome:''))}" placeholder="Quem identificou / praticou a segurança" ${!podeReg?'disabled':''}></div>
         <div class="field"><label>Local</label>
-          <input id="ocLocal" value="${v('local')}" placeholder="Ex: Regenerador 2 - Plataforma 2H" ${!podeReg?'disabled':''}></div>
+          <input id="ocLocal" value="${esc(v('local'))}" placeholder="Ex: Regenerador 2 - Plataforma 2H" ${!podeReg?'disabled':''}></div>
       </div>
       <div class="field"><label>Descrição detalhada</label>
-        <textarea id="ocDesc" rows="3" placeholder="Descreva a condição, desvio ou observação..." ${!podeReg?'disabled':''}>${v('descricao')}</textarea></div>
+        <textarea id="ocDesc" rows="3" placeholder="Descreva a condição, desvio ou observação..." ${!podeReg?'disabled':''}>${esc(v('descricao'))}</textarea></div>
       <div class="field"><label>Ação corretiva / imediata adotada</label>
-        <textarea id="ocAcao" rows="2" placeholder="O que foi feito..." ${!podeReg?'disabled':''}>${v('acaoCorretiva')}</textarea></div>
+        <textarea id="ocAcao" rows="2" placeholder="O que foi feito..." ${!podeReg?'disabled':''}>${esc(v('acaoCorretiva'))}</textarea></div>
       <div class="field"><label>Responsável pela ação corretiva (quem ou equipe)</label>
-        <input id="ocAcaoResp" value="${v('acaoResponsavel')}" placeholder="Ex: Equipe de Manutenção / João Silva" ${!podeReg?'disabled':''}></div>
+        <input id="ocAcaoResp" value="${esc(v('acaoResponsavel'))}" placeholder="Ex: Equipe de Manutenção / João Silva" ${!podeReg?'disabled':''}></div>
       <div class="field"><label>Evidências fotográficas</label>
         ${podeReg?`<div class="upload-zone" onclick="document.getElementById('ocFotoInput').click()" style="padding:18px">
           <div class="uic" style="font-size:26px">📷</div><div style="font-weight:600">Adicionar fotos</div>
@@ -3096,7 +3099,7 @@ function renderUsuarios(){
     <div class="panel-head"><h4>Usuários cadastrados</h4><div class="sub">${usuariosLista().length} usuário(s)</div></div>
     ${usuariosLista().map(u=>{const p=PERFIS[u.perfil]||PERFIS.visualizador;const ehEu=STATE.usuario&&STATE.usuario.id===u.id;return `<div class="user-row">
       <div class="uav" style="background:${p.cor}">${iniciais(u.nome)}</div>
-      <div class="uinfo"><div class="un">${u.nome} ${ehEu?'<span class="perm-tag">você</span>':''}</div><div class="ue">@${u.user} • ${u.email||'sem e-mail'}</div>
+      <div class="uinfo"><div class="un">${esc(u.nome)} ${ehEu?'<span class="perm-tag">você</span>':''}</div><div class="ue">@${esc(u.user)} • ${esc(u.email)||'sem e-mail'}</div>
         <div style="margin-top:5px">${p.perms.slice(0,4).map(pm=>`<span class="perm-tag">${PERM_LABELS[pm]}</span>`).join('')}${p.perms.length>4?`<span class="perm-tag">+${p.perms.length-4}</span>`:''}</div></div>
       <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
         <span class="badge c" style="background:${p.cor}22;color:${p.cor};border-color:${p.cor}55">${p.nome}</span>
@@ -3126,8 +3129,8 @@ function modalUsuario(id){
   const box=document.getElementById('modalBox');
   box.innerHTML=`<div class="modal-head"><div class="mt">${isNew?(real?'➕ Convidar usuário':'➕ Novo usuário'):'✏️ Editar usuário'}</div><button class="modal-x" onclick="fecharModal()">✕</button></div>
   <div class="modal-body">
-    <div class="field"><label>Nome completo</label><input id="nuNome" value="${u?u.nome:''}" placeholder="Nome do usuário"></div>
-    <div class="field"><label>E-mail${real?' (login de acesso)':''}</label><input id="nuEmail" value="${u?(u.email||''):''}" placeholder="email@empresa.com" ${(u&&real)?'disabled':''}>${(u&&real)?'<div class="muted" style="margin-top:4px">O e-mail de login não pode ser alterado aqui.</div>':''}</div>
+    <div class="field"><label>Nome completo</label><input id="nuNome" value="${u?esc(u.nome):''}" placeholder="Nome do usuário"></div>
+    <div class="field"><label>E-mail${real?' (login de acesso)':''}</label><input id="nuEmail" value="${u?esc(u.email):''}" placeholder="email@empresa.com" ${(u&&real)?'disabled':''}>${(u&&real)?'<div class="muted" style="margin-top:4px">O e-mail de login não pode ser alterado aqui.</div>':''}</div>
     ${real?'':`<div class="field"><label>Usuário (login)</label><input id="nuUser" value="${u?u.user:''}" placeholder="login.usuario" ${u?'disabled':''}>${u?'<div class="muted" style="margin-top:4px">O login não pode ser alterado.</div>':''}</div>`}
     ${(real&&isNew)?`
     <div class="field"><label>Forma de acesso</label>
@@ -3365,7 +3368,7 @@ async function configSalvar(){
     const modulos={}; CONFIG.modulos.forEach(m=>modulos[m.id]=m.on);
     const dados={ empresa:CONFIG.empresa, cliente:CONFIG.cliente, prazoInspecaoDias:CONFIG.prazoInspecaoDias, modulos };
     await sb.from('config_app').upsert({contrato_id:STATE.contratoId, dados, updated_by:STATE.usuario.id, updated_at:new Date().toISOString()},{onConflict:'contrato_id'});
-  }catch(e){ console.warn('configSalvar',e); }
+  }catch(e){ console.warn('configSalvar',e); try{toast('Não foi possível salvar os parâmetros no servidor.','err');}catch(_){} }
 }
 async function configCarregar(){
   if(!STATE.usuario || !STATE.usuario.real) return;

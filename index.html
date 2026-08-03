@@ -95,6 +95,10 @@ input,select,textarea{font-family:inherit;font-size:15px}
   display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;
 }
 .topbar .userbtn .pf{font-size:10px;color:var(--txt2);display:block;line-height:1.1}
+.topbar .alertbtn{position:relative;background:var(--bg3);border:1px solid var(--line);border-radius:10px;width:40px;height:40px;font-size:18px;color:var(--txt);cursor:pointer;margin-right:8px;display:flex;align-items:center;justify-content:center}
+.topbar .alertbtn:active{transform:scale(.96)}
+.alert-badge{position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:10px;background:var(--vermelho);color:#fff;font-size:10.5px;font-weight:800;display:none;align-items:center;justify-content:center}
+#offlineBar{display:none;background:#7a1f1f;color:#ffd7d7;font-size:12.5px;text-align:center;padding:7px 10px;font-weight:600}
 
 /* ===== NAV ===== */
 .nav{
@@ -421,6 +425,7 @@ input,select,textarea{font-family:inherit;font-size:15px}
       <h2>SGIA — Integridade de Andaimes</h2>
       <span id="topSub">Regeneradores 1 a 4</span>
     </div>
+    <button class="alertbtn" id="alertBtn" onclick="abrirAlertas()" title="Alertas" aria-label="Alertas">🔔<span class="alert-badge" id="alertBadge"></span></button>
     <button class="userbtn" onclick="goPage('perfil')">
       <div class="avatar" id="topAvatar">AD</div>
       <div style="text-align:left">
@@ -429,6 +434,8 @@ input,select,textarea{font-family:inherit;font-size:15px}
       </div>
     </button>
   </div>
+
+  <div id="offlineBar">⚠️ Sem conexão — o que você salvar agora pode não ser gravado até reconectar.</div>
 
   <div class="nav" id="navMenu"></div>
 
@@ -887,6 +894,7 @@ function aplicarSessao(){
   document.getElementById('topUserName').textContent=usr.nome.split(' ')[0];
   document.getElementById('topUserRole').textContent=PERFIS[usr.perfil].nome;
   buildNav();
+  renderSino();
 }
 function logout(){
   try{ if(_sb) _sb.auth.signOut(); }catch(e){}
@@ -897,6 +905,54 @@ function logout(){
   document.getElementById('loginUser').value='';
   document.getElementById('loginPass').value='';
 }
+
+/* ===== CENTRAL DE ALERTAS + OFFLINE ===== */
+function alertasLista(){
+  var out=[]; var hj=hoje();
+  platsAtivas().forEach(function(p){
+    var regen=p.regenNome||('Reg '+p.regen);
+    if(p.status==='interditada'){ out.push({sev:0,cod:p.cod,regen:regen,txt:'Interditada',ic:'⛔'}); }
+    if(p.status==='liberada'){
+      var temNC=p.checklist && CONFIG.checklist.some(function(it){return p.checklist[it.id]==='nao_conforme';});
+      var vencL=p.proxInspecao && diasEntre(hj,p.proxInspecao)<0;
+      if(temNC||vencL||!p.inspecionada) out.push({sev:0,cod:p.cod,regen:regen,txt:'Liberada com pendência',ic:'⚠️'});
+    }
+    if(p.proxInspecao && diasEntre(hj,p.proxInspecao)<0 && p.status!=='pendente' && p.status!=='liberada' && p.status!=='interditada'){
+      out.push({sev:1,cod:p.cod,regen:regen,txt:'Inspeção vencida há '+Math.abs(diasEntre(hj,p.proxInspecao))+' dia(s)',ic:'⏰'});
+    }
+  });
+  out.sort(function(a,b){return a.sev-b.sev;});
+  return out;
+}
+function renderSino(){
+  var b=document.getElementById('alertBadge'); if(!b) return;
+  var n=alertasLista().length;
+  if(n>0){ b.style.display='flex'; b.textContent=n>99?'99+':(''+n); } else { b.style.display='none'; }
+}
+function abrirAlertas(){
+  var a=alertasLista();
+  var box=document.getElementById('modalBox'); if(!box) return;
+  var body = a.length ? a.map(function(x){
+    return '<div onclick="_irAlerta(\''+x.cod+'\')" style="display:flex;align-items:center;gap:10px;padding:11px 4px;border-bottom:1px solid var(--line);cursor:pointer">'
+      +'<span style="font-size:18px">'+x.ic+'</span>'
+      +'<div style="flex:1"><div style="font-weight:700">'+esc(x.cod)+' • '+esc(x.regen)+'</div><div class="muted" style="font-size:12.5px">'+esc(x.txt)+'</div></div>'
+      +'<span style="color:var(--txt3)">›</span></div>';
+  }).join('') : '<div class="empty"><div class="eic">✅</div>Nenhum alerta no momento. Tudo em dia.</div>';
+  box.innerHTML='<div class="modal-head"><div><div class="mt">🔔 Alertas</div><div class="mc">'+(a.length?a.length+' item(ns) requer(em) atenção':'Sem pendências')+'</div></div><button class="modal-x" onclick="fecharModal()">✕</button></div><div class="modal-body">'+body+'</div>';
+  document.getElementById('modalBg').classList.add('open');
+}
+function _irAlerta(cod){ fecharModal(); try{ abrirFicha(cod); }catch(e){ console.warn(e); } }
+function _alertaLoginToast(){
+  if(STATE._alertToastShown) return;
+  var a=alertasLista(); if(!a.length) return;
+  STATE._alertToastShown=true;
+  var crit=a.filter(function(x){return x.sev===0;}).length;
+  try{ toast('🔔 '+a.length+' alerta(s)'+(crit?' • '+crit+' crítico(s)':'')+' — toque no sino no topo.','err'); }catch(_){}
+}
+function _offlineUpdate(){ var b=document.getElementById('offlineBar'); if(b) b.style.display=navigator.onLine?'none':'block'; }
+window.addEventListener('online',function(){ _offlineUpdate(); try{toast('Conexão restabelecida.','ok');}catch(_){} });
+window.addEventListener('offline',function(){ _offlineUpdate(); });
+try{ _offlineUpdate(); }catch(_){}
 
 /* ====================================================================
    NAVEGAÇÃO — respeita módulos ligados e permissões do perfil
@@ -1722,6 +1778,7 @@ function _reRender(){
     var nm={dashboard:'renderDashboard',regen:'renderRegen',mapa:'renderMapa',seguranca:'renderSeguranca',relatorios:'renderRelatorios',historico:'renderHistorico',usuarios:'renderUsuarios',admin:'renderAdmin'}[currentPage];
     if(nm && typeof window[nm]==='function') window[nm]();
   }catch(e){ console.warn('_reRender',e); }
+  try{renderSino();}catch(_){}
 }
 async function platCarregar(){
   if(!STATE.usuario || !STATE.usuario.real) return;
@@ -1744,6 +1801,7 @@ async function platCarregar(){
     STATE.platCarregado=true;
     _reRender();
     abrirPlataformaPendente(); // real: abre a ficha do QR já com os dados reais
+    _alertaLoginToast();
   }catch(e){ console.warn('platCarregar',e); }
 }
 async function platSalvar(p){

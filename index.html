@@ -949,10 +949,45 @@ function _alertaLoginToast(){
   var crit=a.filter(function(x){return x.sev===0;}).length;
   try{ toast('🔔 '+a.length+' alerta(s)'+(crit?' • '+crit+' crítico(s)':'')+' — toque no sino no topo.','err'); }catch(_){}
 }
-function _offlineUpdate(){ var b=document.getElementById('offlineBar'); if(b) b.style.display=navigator.onLine?'none':'block'; }
-window.addEventListener('online',function(){ _offlineUpdate(); try{toast('Conexão restabelecida.','ok');}catch(_){} });
-window.addEventListener('offline',function(){ _offlineUpdate(); });
-try{ _offlineUpdate(); }catch(_){}
+/* ===== OFFLINE-FIRST: fila de sincronização + service worker ===== */
+function _filaGet(){ try{ return JSON.parse(localStorage.getItem('sgia_fila')||'[]'); }catch(e){ return []; } }
+function _filaSet(a){ try{ localStorage.setItem('sgia_fila', JSON.stringify(a)); }catch(e){} }
+function _filaCount(){ return _filaGet().length; }
+function _filaAdd(op){ var a=_filaGet(); a.push(op); _filaSet(a); _syncBar(); }
+function _platFields(p){ return { status:p.status, inspecionada:!!p.inspecionada, ativo:p.ativo!==false, ult_inspecao:p.ultInspecao||null, prox_inspecao:p.proxInspecao||null, responsavel:p.responsavel||null, obs:p.obs||null, checklist:p.checklist||{}, pos_mapa:p.posMapa||{}, updated_by:(STATE.usuario&&STATE.usuario.id)||null }; }
+async function _filaExec(op){
+  try{ var sb=sbClient();
+    if(op.kind==='platScalar'){ var r=await sb.from('plataformas').update(op.fields).eq('id',op.dbId); if(r.error) throw r.error; return true; }
+    if(op.kind==='platEvento'){ var r2=await sb.rpc('sgia_plat_evento',{p_id:op.dbId,p_evento:op.ev,p_by:op.by}); if(r2.error) throw r2.error; return true; }
+    return true;
+  }catch(e){ console.warn('_filaExec',e); return false; }
+}
+var _flushing=false;
+async function _filaFlush(){
+  if(_flushing || !navigator.onLine) return;
+  if(!(STATE.usuario && STATE.usuario.real)) return;
+  var fila=_filaGet(); if(!fila.length){ _syncBar(); return; }
+  _flushing=true;
+  try{
+    var rest=[];
+    for(var i=0;i<fila.length;i++){ var ok=await _filaExec(fila[i]); if(!ok){ fila[i].attempts=(fila[i].attempts||0)+1; rest.push(fila[i]); } }
+    _filaSet(rest); _syncBar();
+    var done=fila.length-rest.length;
+    if(done>0){ try{toast('✅ '+done+' lançamento(s) sincronizado(s).','ok');}catch(_){} if(typeof currentPage!=='undefined') _reRender(); }
+  } finally { _flushing=false; }
+}
+function _syncBar(){
+  var b=document.getElementById('offlineBar'); if(!b) return;
+  var n=_filaCount();
+  if(!navigator.onLine){ b.style.background='#7a1f1f'; b.style.color='#ffd7d7'; b.style.display='block'; b.textContent='⚠️ Sem conexão'+(n?' — '+n+' lançamento(s) aguardando sincronização.':' — o que você salvar será sincronizado ao reconectar.'); }
+  else if(n){ b.style.background='#5a4a1f'; b.style.color='#ffe9b0'; b.style.display='block'; b.textContent='🔄 Sincronizando '+n+' lançamento(s)...'; }
+  else { b.style.display='none'; }
+}
+window.addEventListener('online',function(){ _syncBar(); try{toast('Conexão restabelecida. Sincronizando…','ok');}catch(_){} _filaFlush(); });
+window.addEventListener('offline',function(){ _syncBar(); });
+setInterval(function(){ if(navigator.onLine) _filaFlush(); }, 60000);
+try{ _syncBar(); }catch(_){}
+if('serviceWorker' in navigator){ window.addEventListener('load',function(){ navigator.serviceWorker.register('sw.js').catch(function(e){ console.warn('sw',e); }); }); }
 
 /* ====================================================================
    NAVEGAÇÃO — respeita módulos ligados e permissões do perfil
@@ -1802,6 +1837,7 @@ async function platCarregar(){
     _reRender();
     abrirPlataformaPendente(); // real: abre a ficha do QR já com os dados reais
     _alertaLoginToast();
+    _filaFlush();
   }catch(e){ console.warn('platCarregar',e); }
 }
 async function platSalvar(p){
@@ -1889,6 +1925,14 @@ async function salvarInspecao(btn){
   p.historico.unshift(_ev);
 
   // salva de fato e só confirma sucesso quando o servidor confirmar
+  const _real=STATE.usuario&&STATE.usuario.real;
+  if(_real && !navigator.onLine){
+    _filaAdd({id:uid(),kind:'platScalar',dbId:p.dbId,fields:_platFields(p)});
+    _filaAdd({id:uid(),kind:'platEvento',dbId:p.dbId,ev:_ev,by:STATE.usuario.id});
+    logAudit("Inspeção salva (offline)",`Plataforma ${p.cod}`,"Aguardando sincronização.");
+    toast('Sem conexão: inspeção salva no aparelho e será sincronizada automaticamente ao reconectar.','ok');
+    fecharModal(); _reRender(); return;
+  }
   let _txt=null;
   if(btn){ _txt=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando…'; }
   const okScalar=await platSalvar(p);

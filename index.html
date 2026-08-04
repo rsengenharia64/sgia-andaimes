@@ -511,7 +511,8 @@ const CONFIG = {
     {id:"relatorios", nome:"Relatórios PDF",         desc:"Geração de relatórios e exportação em PDF.",          ic:"📄", on:true,  fixo:false},
     {id:"qrcode",     nome:"QR Code",                desc:"QR exclusivo por plataforma para inspeção em campo.", ic:"🔳", on:true,  fixo:false},
     {id:"historico",  nome:"Histórico e Auditoria",  desc:"Rastreabilidade completa de todas as ações.",         ic:"🕓", on:true,  fixo:false},
-    {id:"usuarios",   nome:"Controle de Usuários",   desc:"Perfis e permissões de acesso.",                      ic:"👥", on:true,  fixo:false}
+    {id:"usuarios",   nome:"Controle de Usuários",   desc:"Perfis e permissões de acesso.",                      ic:"👥", on:true,  fixo:false},
+    {id:"agenda",     nome:"Agenda de Inspeções",    desc:"Programação, calendário e plano de ação.",            ic:"📅", on:true,  fixo:false}
   ]
 };
 
@@ -530,7 +531,8 @@ const PERFIS = {
   fiscal:           {nome:"Fiscal (Cliente)",    cor:"#6b7785", perms:["ver","relatorios"]},
   visualizador:     {nome:"Visualizador (Cliente)", cor:"#6b7785", perms:["ver","relatorios"]}
 };
-const PERM_LABELS = {ver:"Visualizar",inspecionar:"Inspecionar",fotos:"Anexar fotos",fotos_del:"Excluir fotos",relatorios:"Relatórios",seguranca:"Registrar segurança",usuarios:"Gerir usuários",admin:"Configurar sistema",mapa_edit:"Editar mapa"};
+['admin','coordenador','supervisor','encarregado','gerente','tecnico'].forEach(function(k){ if(PERFIS[k] && PERFIS[k].perms.indexOf('agenda')<0) PERFIS[k].perms.push('agenda'); });
+const PERM_LABELS = {ver:"Visualizar",inspecionar:"Inspecionar",fotos:"Anexar fotos",fotos_del:"Excluir fotos",relatorios:"Relatórios",seguranca:"Registrar segurança",usuarios:"Gerir usuários",admin:"Configurar sistema",mapa_edit:"Editar mapa",agenda:"Programar inspeções"};
 
 /* ===== USUÁRIOS DE DEMONSTRAÇÃO ===== */
 let USUARIOS = [
@@ -547,6 +549,7 @@ let STATE = {
   plataformas:[],        // todas as plataformas (ativos)
   auditoria:[],          // log global de rastreabilidade
   ocorrencias:[],        // registros do módulo Segurança
+  programas:[], inspProg:[], acoes:[], agendaCarregado:false, agendaOffset:0,
   regenAtivo:1,          // aba de regenerador selecionada
   filtroStatus:"todos",  // filtro do grid
   busca:"",
@@ -999,6 +1002,7 @@ const PAGES = [
   {id:"regen",      mod:"regen",      perm:"ver",        ic:"🏭", nome:"Regeneradores"},
   {id:"mapa",       mod:"mapa",       perm:"ver",        ic:"🗺️", nome:"Mapa Visual"},
   {id:"seguranca",  mod:"seguranca",  perm:"ver",        ic:"🦺", nome:"Segurança"},
+  {id:"agenda",     mod:"agenda",     perm:"ver",        ic:"📅", nome:"Agenda"},
   {id:"relatorios", mod:"relatorios", perm:"relatorios", ic:"📄", nome:"Relatórios"},
   {id:"historico",  mod:"historico",  perm:"ver",        ic:"🕓", nome:"Auditoria"},
   {id:"usuarios",   mod:"usuarios",   perm:"usuarios",   ic:"👥", nome:"Usuários"},
@@ -1023,7 +1027,7 @@ function goPage(id){
   }
   currentPage=id;
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.pg===id));
-  const render={dashboard:renderDashboard,regen:renderRegen,mapa:renderMapa,seguranca:renderSeguranca,relatorios:renderRelatorios,historico:renderHistorico,usuarios:renderUsuarios,admin:renderAdmin,perfil:renderPerfil};
+  const render={dashboard:renderDashboard,regen:renderRegen,mapa:renderMapa,seguranca:renderSeguranca,relatorios:renderRelatorios,historico:renderHistorico,usuarios:renderUsuarios,admin:renderAdmin,agenda:renderAgenda,perfil:renderPerfil};
   (render[id]||renderDashboard)();
   window.scrollTo(0,0);
 }
@@ -1471,6 +1475,231 @@ async function gerarApresentacaoPPTX(){
   try{logAudit('Apresentação (PPTX) gerada','Relatórios','Deck PPTX por '+STATE.usuario.nome+'.');}catch(e){}
 }
 
+/* ==================================================================
+   MÓDULO: AGENDA DE INSPEÇÕES (programação, calendário, previsto×realizado, plano de ação)
+   ================================================================== */
+function _regNome(num){ var r=CONFIG.regeneradores.find(function(x){return String(x.id)===String(num);}); return r?r.nome:('Reg '+num); }
+function _escopoLabel(tipo,ref){ if(tipo==='todas')return 'Todas as plataformas'; if(tipo==='regenerador')return _regNome(ref); if(tipo==='plataforma')return 'Plataforma '+ref; return ref||'—'; }
+function _diasDaFreq(freq){ return ({1:[2],2:[1,4],3:[1,3,5],4:[1,2,4,5],5:[1,2,3,4,5],7:[0,1,2,3,4,5,6]})[freq]||[1,3,5]; }
+function _ymd(d){ var x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
+function _inicioSemana(off){ var d=new Date(); d.setHours(0,0,0,0); var dow=(d.getDay()+6)%7; d.setDate(d.getDate()-dow+(off||0)*7); return d; }
+function _slotStatus(s){ if(s.status==='realizada')return 'realizada'; if(s.status==='cancelada')return 'cancelada'; if(diasEntre(hoje(),_parseData((s.data_prevista||'').slice(0,10)))<0) return 'atrasada'; return 'prevista'; }
+async function agendaCarregar(){
+  if(!STATE.usuario||!STATE.usuario.real) return;
+  try{
+    var sb=sbClient(); if(!STATE.contratoId) await segGarantirContrato(sb);
+    var pr=await sb.from('programas_inspecao').select('*').is('excluido_em',null).eq('ativo',true);
+    STATE.programas=(pr.data||[]);
+    var ip=await sb.from('inspecoes_programadas').select('*').is('excluido_em',null);
+    STATE.inspProg=(ip.data||[]);
+    var ac=await sb.from('acoes_corretivas').select('*').is('excluido_em',null).order('prazo',{ascending:true});
+    STATE.acoes=(ac.data||[]);
+    STATE.agendaCarregado=true;
+    if(typeof currentPage!=='undefined' && currentPage==='agenda') renderAgenda();
+  }catch(e){ console.warn('agendaCarregar',e); }
+}
+function agendaSeedDemo(){
+  STATE._agendaSeed=true;
+  var ini=_inicioSemana(0);
+  function dstr(off){ var d=new Date(ini); d.setDate(d.getDate()+off); return _ymd(d); }
+  STATE.programas=[{id:'pgd1',escopo_tipo:'regenerador',escopo_ref:'1',frequencia:5,vigencia_inicio:_ymd(ini)},{id:'pgd2',escopo_tipo:'regenerador',escopo_ref:'2',frequencia:3,vigencia_inicio:_ymd(ini)}];
+  STATE.inspProg=[
+    {id:'sd1',programa_id:'pgd1',data_prevista:dstr(0),escopo_tipo:'regenerador',escopo_ref:'1',status:'realizada',realizado_em:new Date().toISOString()},
+    {id:'sd2',programa_id:'pgd2',data_prevista:dstr(0),escopo_tipo:'regenerador',escopo_ref:'2',status:'realizada',realizado_em:new Date().toISOString()},
+    {id:'sd3',programa_id:'pgd1',data_prevista:dstr(1),escopo_tipo:'regenerador',escopo_ref:'1',status:'prevista'},
+    {id:'sd4',programa_id:'pgd2',data_prevista:dstr(2),escopo_tipo:'regenerador',escopo_ref:'2',status:'prevista'},
+    {id:'sd5',programa_id:'pgd1',data_prevista:dstr(-1),escopo_tipo:'regenerador',escopo_ref:'1',status:'prevista'}
+  ];
+  STATE.acoes=[
+    {id:'acd1',item_nc:'2H',descricao:'Guarda-corpo com travessa solta',responsavel:'Equipe Montagem',prazo:dstr(2),prioridade:'alta',status:'andamento'},
+    {id:'acd2',item_nc:'2C',descricao:'Piso e estrutura reprovados',responsavel:'Manutenção',prazo:dstr(-1),prioridade:'critica',status:'aberta'}
+  ];
+}
+function renderAgenda(){
+  if(STATE.usuario&&STATE.usuario.real&&!STATE.agendaCarregado){ agendaCarregar(); }
+  if(!(STATE.usuario&&STATE.usuario.real) && !STATE._agendaSeed){ agendaSeedDemo(); }
+  var pode=temPerm('agenda');
+  var c=document.getElementById('content');
+  c.innerHTML='<div class="page-head"><h3>📅 Agenda de Inspeções</h3><p>Programação, calendário e aderência (previsto × realizado)</p></div>'
+   +'<div class="filterbar">'
+   + (pode?'<button class="btn-sm" onclick="modalNovaProgramacao()">➕ Nova programação</button>':'')
+   + (pode?'<button class="btn-sm sec" onclick="modalNovaAcao()">🛠️ Nova ação corretiva</button>':'')
+   + '<span class="muted" style="font-size:12.5px;align-self:center">'+(pode?'Você pode programar inspeções.':'Consulta (somente leitura).')+'</span></div>'
+   +'<div id="agResumo"></div>'
+   +'<div class="panel"><div class="panel-head"><div><h4>Calendário da semana</h4><div class="sub" id="agSemLabel"></div></div>'
+   +'<div style="display:flex;gap:6px"><button class="btn-sm sec" onclick="agSemana(-1)">◀</button><button class="btn-sm sec" onclick="agSemana(0)">Hoje</button><button class="btn-sm sec" onclick="agSemana(1)">▶</button></div></div><div id="agCal"></div></div>'
+   +'<div class="panel"><div class="panel-head"><h4>📌 Programas ativos</h4></div><div id="agProgramas"></div></div>'
+   +'<div class="panel"><div class="panel-head"><h4>🛠️ Plano de ação — correção de NCs</h4></div><div id="agAcoes"></div></div>';
+  agRenderResumo(); agRenderCal(); agRenderProgramas(); agRenderAcoes();
+}
+function agSemana(v){ if(v===0)STATE.agendaOffset=0; else STATE.agendaOffset=(STATE.agendaOffset||0)+v; agRenderCal(); }
+function agMetricas(dias){
+  var fim=new Date(); fim.setHours(23,59,59,0);
+  var ini=new Date(); ini.setDate(ini.getDate()-(dias||30)); ini.setHours(0,0,0,0);
+  var prev=0,real=0,atr=0;
+  (STATE.inspProg||[]).forEach(function(s){
+    var d=_parseData((s.data_prevista||'').slice(0,10)); if(isNaN(d))return; if(d<ini||d>fim) return;
+    prev++; if(s.status==='realizada') real++; else if(diasEntre(hoje(),d)<0) atr++;
+  });
+  return {prev:prev,real:real,atr:atr,ader: prev?Math.round(real/prev*100):0};
+}
+function agRenderResumo(){
+  var w=document.getElementById('agResumo'); if(!w)return; var m=agMetricas(30);
+  w.innerHTML='<div class="kpi-grid" style="margin-bottom:12px">'
+    +'<div class="kpi blue"><div class="lab">Previstas (30d)</div><div class="val">'+m.prev+'</div><div class="meta">inspeções programadas</div></div>'
+    +'<div class="kpi green"><div class="lab">Realizadas</div><div class="val">'+m.real+'</div><div class="meta">no período</div></div>'
+    +'<div class="kpi red"><div class="lab">Atrasadas</div><div class="val">'+m.atr+'</div><div class="meta">venceram sem realizar</div></div>'
+    +'<div class="kpi '+(m.ader>=90?'green':m.ader>=70?'yellow':'red')+'"><div class="lab">Aderência</div><div class="val">'+m.ader+'%</div><div class="pct">meta 90%</div></div></div>';
+}
+function agRenderCal(){
+  var wrap=document.getElementById('agCal'); if(!wrap)return;
+  var ini=_inicioSemana(STATE.agendaOffset||0);
+  var lbl=document.getElementById('agSemLabel'); if(lbl){ var f=new Date(ini); f.setDate(f.getDate()+6); lbl.textContent=fmtData(ini)+' – '+fmtData(f); }
+  var nomes=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+  var cores={realizada:'var(--verde)',prevista:'var(--azul)',atrasada:'var(--vermelho)',cancelada:'var(--cinza)'};
+  var html='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">';
+  for(var i=0;i<7;i++){
+    var day=new Date(ini); day.setDate(day.getDate()+i); var ymd=_ymd(day); var hj=_ymd(new Date())===ymd;
+    var slots=(STATE.inspProg||[]).filter(function(s){return (s.data_prevista||'').slice(0,10)===ymd;});
+    var chips=slots.map(function(s){var st=_slotStatus(s);var ic=st==='realizada'?'✓':(st==='atrasada'?'!':'•');
+      return '<div onclick="agAbrirSlot(\''+s.id+'\')" style="background:'+cores[st]+';color:#fff;border-radius:5px;padding:3px 4px;font-size:10px;font-weight:700;margin-bottom:3px;cursor:pointer" title="'+esc(_escopoLabel(s.escopo_tipo,s.escopo_ref))+'">'+ic+' '+esc(_escopoLabel(s.escopo_tipo,s.escopo_ref).slice(0,10))+'</div>';}).join('')||'<div style="font-size:9px;color:var(--txt3);opacity:.5">—</div>';
+    html+='<div style="border:'+(hj?'2px solid var(--azul)':'1px solid var(--line)')+';border-radius:8px;padding:5px 4px;min-height:76px;background:var(--bg2)"><div style="font-size:10px;color:var(--txt2);font-weight:600;text-align:center">'+nomes[i]+' '+String(day.getDate()).padStart(2,'0')+'</div><div style="margin-top:4px">'+chips+'</div></div>';
+  }
+  html+='</div><div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:11.5px;color:var(--txt2)"><span><span class="dot g"></span>Realizada</span><span><span class="dot" style="background:var(--azul)"></span>Programada</span><span><span class="dot r"></span>Atrasada</span></div>';
+  wrap.innerHTML=html;
+}
+function agAbrirSlot(id){
+  var s=(STATE.inspProg||[]).find(function(x){return String(x.id)===String(id);}); if(!s)return;
+  var pode=temPerm('agenda')||temPerm('inspecionar'); var st=_slotStatus(s);
+  var stl={realizada:'Realizada',prevista:'Programada',atrasada:'Atrasada',cancelada:'Cancelada'};
+  var box=document.getElementById('modalBox');
+  box.innerHTML='<div class="modal-head"><div><div class="mt">📅 '+esc(_escopoLabel(s.escopo_tipo,s.escopo_ref))+'</div><div class="mc">Prevista para '+fmtData(s.data_prevista)+' • '+stl[st]+'</div></div><button class="modal-x" onclick="fecharModal()">✕</button></div><div class="modal-body">'
+   + (s.status!=='realizada' && pode ? '<button class="btn-sm" style="width:100%;justify-content:center;margin-bottom:8px" onclick="agMarcar(\''+s.id+'\',\'realizada\')">✅ Marcar como realizada</button>':'')
+   + (s.status==='realizada'?'<div class="scope-note">✓ Realizada em '+(s.realizado_em?fmtDataHora(s.realizado_em):'—')+'</div>':'')
+   + (s.status!=='cancelada' && s.status!=='realizada' && pode ? '<button class="btn-sm sec" style="width:100%;justify-content:center" onclick="agMarcar(\''+s.id+'\',\'cancelada\')">Cancelar esta inspeção</button>':'')
+   + (!pode?'<div class="scope-note">Somente leitura.</div>':'')
+   + '</div>';
+  document.getElementById('modalBg').classList.add('open');
+}
+async function agMarcar(id,novo){
+  var s=(STATE.inspProg||[]).find(function(x){return String(x.id)===String(id);}); if(!s)return;
+  s.status=novo; if(novo==='realizada'){ s.realizado_em=new Date().toISOString(); s.realizado_por_id=STATE.usuario.id; }
+  if(STATE.usuario&&STATE.usuario.real){ try{ var sb=sbClient(); var upd={status:novo,updated_by:STATE.usuario.id}; if(novo==='realizada'){upd.realizado_em=s.realizado_em;upd.realizado_por_id=STATE.usuario.id;} var r=await sb.from('inspecoes_programadas').update(upd).eq('id',id); if(r.error) throw r.error; }catch(e){ console.warn('agMarcar',e); toast('Falha ao salvar. Verifique a conexão.','err'); } }
+  logAudit(novo==='realizada'?'Inspeção programada realizada':'Inspeção programada cancelada', _escopoLabel(s.escopo_tipo,s.escopo_ref), 'Prevista '+fmtData(s.data_prevista));
+  toast(novo==='realizada'?'Marcada como realizada!':'Inspeção cancelada.','ok'); fecharModal(); renderAgenda();
+}
+function agRenderProgramas(){
+  var w=document.getElementById('agProgramas'); if(!w)return; var pode=temPerm('agenda'); var lista=STATE.programas||[];
+  if(!lista.length){ w.innerHTML='<div class="empty"><div class="eic">📅</div>Nenhuma programação criada ainda.</div>'; return; }
+  var freqTxt=function(p){ return p.frequencia===0?'Quinzenal':(p.frequencia===7?'Diária':(p.frequencia+'× / semana')); };
+  w.innerHTML=lista.map(function(p){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)"><span style="font-size:18px">📌</span><div style="flex:1"><div style="font-size:13px;color:var(--txt);font-weight:600">'+esc(_escopoLabel(p.escopo_tipo,p.escopo_ref))+'</div><div class="muted" style="font-size:11.5px">'+freqTxt(p)+' · desde '+fmtData(p.vigencia_inicio)+'</div></div>'
+     + (pode?'<button class="btn-sm danger" style="padding:5px 8px;font-size:11px" onclick="agExcluirPrograma(\''+p.id+'\')">🗑️</button>':'')+'</div>';
+  }).join('');
+}
+async function agExcluirPrograma(id){
+  if(!temPerm('agenda'))return; if(!confirm('Excluir esta programação? As inspeções previstas futuras serão removidas.'))return;
+  if(STATE.usuario&&STATE.usuario.real){ try{ var sb=sbClient(); await sb.from('programas_inspecao').update({excluido_em:new Date().toISOString()}).eq('id',id); await sb.from('inspecoes_programadas').update({excluido_em:new Date().toISOString()}).eq('programa_id',id).eq('status','prevista'); }catch(e){ console.warn(e); } }
+  STATE.programas=(STATE.programas||[]).filter(function(x){return String(x.id)!==String(id);});
+  STATE.inspProg=(STATE.inspProg||[]).filter(function(x){return String(x.programa_id)!==String(id)||x.status!=='prevista';});
+  logAudit('Programação excluída','Agenda','—'); toast('Programação removida.','ok'); renderAgenda();
+}
+function agRenderAcoes(){
+  var w=document.getElementById('agAcoes'); if(!w)return; var pode=temPerm('agenda')||temPerm('inspecionar')||temPerm('seguranca'); var lista=STATE.acoes||[];
+  if(!lista.length){ w.innerHTML='<div class="empty"><div class="eic">✅</div>Nenhuma ação corretiva registrada.</div>'; return; }
+  var labels={aberta:'Aberta',andamento:'Em andamento',concluida:'Concluída',verificada:'Verificada'};
+  var cores={aberta:'var(--azul)',andamento:'var(--amarelo)',concluida:'var(--verde)',verificada:'var(--verde)'};
+  var prioCor={baixa:'var(--cinza)',media:'var(--azul)',alta:'var(--amarelo)',critica:'var(--vermelho)'};
+  w.innerHTML=lista.map(function(a){
+    var venc=a.prazo && diasEntre(hoje(),_parseData((a.prazo||'').slice(0,10)))<0 && a.status!=='concluida' && a.status!=='verificada';
+    var cod=a.item_nc||a.plataforma_cod||'—';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)"><span class="badge" style="background:'+(prioCor[a.prioridade]||'var(--azul)')+';color:#fff">'+esc(cod)+'</span><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--txt);font-weight:600">'+esc(a.descricao)+'</div><div class="muted" style="font-size:11.5px">👤 '+esc(a.responsavel||'—')+' · prazo '+(a.prazo?fmtData(a.prazo):'—')+(venc?' <span style="color:var(--vermelho)">⚠ vencido</span>':'')+'</div></div>'
+      + (pode?'<select onchange="agMudarAcao(\''+a.id+'\',this.value)" style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:5px;color:var(--txt);font-size:12px">'+['aberta','andamento','concluida','verificada'].map(function(x){return '<option value="'+x+'" '+(a.status===x?'selected':'')+'>'+labels[x]+'</option>';}).join('')+'</select>':'<span style="font-size:12px;font-weight:700;color:'+(cores[a.status]||'var(--txt2)')+'">'+labels[a.status]+'</span>')+'</div>';
+  }).join('');
+}
+function modalNovaProgramacao(){
+  if(!temPerm('agenda')){toast('Sem permissão.','err');return;}
+  var box=document.getElementById('modalBox');
+  box.innerHTML='<div class="modal-head"><div class="mt">➕ Nova programação</div><button class="modal-x" onclick="fecharModal()">✕</button></div><div class="modal-body">'
+   +'<div class="field"><label>Escopo</label><select id="pgEscopoTipo" onchange="agEscopoRef()"><option value="regenerador">Por regenerador</option><option value="todas">Todas as plataformas</option><option value="plataforma">Uma plataforma</option></select></div>'
+   +'<div class="field" id="pgRefWrap"></div>'
+   +'<div class="field"><label>Cadência</label><select id="pgFreq"><option value="quinzenal">Quinzenal (a cada 14 dias)</option><option value="1">1× por semana</option><option value="2">2× por semana</option><option value="3" selected>3× por semana</option><option value="4">4× por semana</option><option value="5">5× por semana</option><option value="7">Diária</option></select></div>'
+   +'<div class="row-2"><div class="field"><label>Início</label><input id="pgIni" type="date" value="'+_ymd(new Date())+'"></div><div class="field"><label>Fim (opcional)</label><input id="pgFim" type="date"></div></div>'
+   +'<button class="btn-sm" style="width:100%;justify-content:center" onclick="salvarPrograma()">💾 Criar e gerar calendário</button>'
+   +'<div class="scope-note" style="margin-top:8px">Gera automaticamente as inspeções previstas para os próximos 60 dias. Frequência conforme NR-18/NR-35 — validar com o TST/SESMT.</div></div>';
+  document.getElementById('modalBg').classList.add('open'); agEscopoRef();
+}
+function agEscopoRef(){
+  var t=document.getElementById('pgEscopoTipo').value; var w=document.getElementById('pgRefWrap'); if(!w)return;
+  if(t==='regenerador'){ w.innerHTML='<label>Regenerador</label><select id="pgRef">'+CONFIG.regeneradores.map(function(r){return '<option value="'+r.id+'">'+r.nome+'</option>';}).join('')+'</select>'; }
+  else if(t==='plataforma'){ w.innerHTML='<label>Código da plataforma</label><input id="pgRef" placeholder="Ex: 2H" style="text-transform:uppercase">'; }
+  else { w.innerHTML='<label class="muted" style="font-size:12px">Cobre todas as plataformas ativas.</label>'; }
+}
+async function salvarPrograma(){
+  if(!temPerm('agenda')){toast('Sem permissão.','err');return;}
+  var tipo=document.getElementById('pgEscopoTipo').value;
+  var refEl=document.getElementById('pgRef'); var ref=refEl?(refEl.value||'').trim():'';
+  if(tipo==='plataforma') ref=ref.toUpperCase();
+  if(tipo!=='todas' && !ref){ toast('Informe o escopo.','err'); return; }
+  var freqRaw=document.getElementById('pgFreq').value;
+  var ini=document.getElementById('pgIni').value||_ymd(new Date());
+  var fim=document.getElementById('pgFim').value||null;
+  var quinzenal=freqRaw==='quinzenal'; var freq=quinzenal?0:parseInt(freqRaw,10); var dias=quinzenal?[]:_diasDaFreq(freq);
+  var slots=[]; var d0=new Date(ini+'T12:00:00'); var lim=new Date(d0); lim.setDate(lim.getDate()+60); var fimD=fim?new Date(fim+'T12:00:00'):null;
+  for(var d=new Date(d0); d<=lim; d.setDate(d.getDate()+1)){
+    if(fimD && d>fimD) break; var add=false;
+    if(quinzenal){ if(Math.round((d-d0)/86400000)%14===0) add=true; } else { if(dias.indexOf(d.getDay())>=0) add=true; }
+    if(add) slots.push(_ymd(d));
+  }
+  var real=STATE.usuario&&STATE.usuario.real;
+  if(real){
+    try{ var sb=sbClient(); if(!STATE.contratoId) await segGarantirContrato(sb);
+      var pi=await sb.from('programas_inspecao').insert({contrato_id:STATE.contratoId,escopo_tipo:tipo,escopo_ref:tipo==='todas'?null:ref,frequencia:quinzenal?0:freq,dias_semana:dias,vigencia_inicio:ini,vigencia_fim:fim,created_by:STATE.usuario.id,updated_by:STATE.usuario.id}).select('id').single();
+      if(pi.error) throw pi.error; var pid=pi.data.id;
+      var rows=slots.map(function(dt){return {contrato_id:STATE.contratoId,programa_id:pid,data_prevista:dt,escopo_tipo:tipo,escopo_ref:tipo==='todas'?null:ref,status:'prevista'};});
+      if(rows.length){ var r2=await sb.from('inspecoes_programadas').insert(rows); if(r2.error) throw r2.error; }
+    }catch(e){ console.warn('salvarPrograma',e); toast('Erro ao salvar no servidor.','err'); return; }
+    await agendaCarregar();
+  } else {
+    var pid2='pg'+uid(); STATE.programas.unshift({id:pid2,escopo_tipo:tipo,escopo_ref:tipo==='todas'?null:ref,frequencia:quinzenal?0:freq,vigencia_inicio:ini});
+    slots.forEach(function(dt){ STATE.inspProg.push({id:'sp'+uid(),programa_id:pid2,data_prevista:dt,escopo_tipo:tipo,escopo_ref:tipo==='todas'?null:ref,status:'prevista'}); });
+  }
+  logAudit('Programação de inspeção criada',_escopoLabel(tipo,ref),(quinzenal?'Quinzenal':(freq+'x/semana'))+' • '+slots.length+' previstas');
+  toast('Programação criada — '+slots.length+' inspeções no calendário!','ok'); fecharModal(); renderAgenda();
+}
+function modalNovaAcao(){
+  if(!(temPerm('agenda')||temPerm('inspecionar')||temPerm('seguranca'))){toast('Sem permissão.','err');return;}
+  var box=document.getElementById('modalBox');
+  box.innerHTML='<div class="modal-head"><div class="mt">🛠️ Nova ação corretiva</div><button class="modal-x" onclick="fecharModal()">✕</button></div><div class="modal-body">'
+   +'<div class="field"><label>Plataforma (opcional)</label><input id="acPlat" placeholder="Ex: 2H" style="text-transform:uppercase"></div>'
+   +'<div class="field"><label>Descrição da não conformidade / ação</label><textarea id="acDesc" rows="2" placeholder="O que precisa ser corrigido"></textarea></div>'
+   +'<div class="row-2"><div class="field"><label>Responsável</label><input id="acResp" placeholder="Equipe / pessoa"></div><div class="field"><label>Prazo</label><input id="acPrazo" type="date"></div></div>'
+   +'<div class="field"><label>Prioridade</label><select id="acPrio"><option value="baixa">Baixa</option><option value="media" selected>Média</option><option value="alta">Alta</option><option value="critica">Crítica</option></select></div>'
+   +'<button class="btn-sm" style="width:100%;justify-content:center" onclick="salvarAcao()">💾 Registrar ação</button></div>';
+  document.getElementById('modalBg').classList.add('open');
+}
+async function salvarAcao(){
+  var plat=(document.getElementById('acPlat').value||'').trim().toUpperCase();
+  var desc=(document.getElementById('acDesc').value||'').trim();
+  var resp=(document.getElementById('acResp').value||'').trim();
+  var prazo=document.getElementById('acPrazo').value||null; var prio=document.getElementById('acPrio').value;
+  if(!desc){toast('Descreva a ação.','err');return;}
+  var platId=null; if(plat){ var p=STATE.plataformas.find(function(x){return x.cod===plat;}); platId=p?p.dbId:null; }
+  var real=STATE.usuario&&STATE.usuario.real;
+  if(real){ try{ var sb=sbClient(); if(!STATE.contratoId) await segGarantirContrato(sb);
+      var r=await sb.from('acoes_corretivas').insert({contrato_id:STATE.contratoId,plataforma_id:platId,origem:'manual',descricao:desc,item_nc:plat||null,responsavel:resp,prazo:prazo,prioridade:prio,status:'aberta',created_by:STATE.usuario.id,updated_by:STATE.usuario.id}); if(r.error) throw r.error;
+    }catch(e){ console.warn('salvarAcao',e); toast('Erro ao salvar.','err'); return; } await agendaCarregar();
+  } else { STATE.acoes.unshift({id:'ac'+uid(),plataforma_cod:plat,item_nc:plat,descricao:desc,responsavel:resp,prazo:prazo,prioridade:prio,status:'aberta'}); }
+  logAudit('Ação corretiva registrada',plat||'—',desc.slice(0,60)); toast('Ação registrada!','ok'); fecharModal(); renderAgenda();
+}
+async function agMudarAcao(id,novo){
+  var a=(STATE.acoes||[]).find(function(x){return String(x.id)===String(id);}); if(!a)return;
+  a.status=novo; if(novo==='concluida') a.data_conclusao=_ymd(new Date());
+  if(STATE.usuario&&STATE.usuario.real){ try{ var sb=sbClient(); var upd={status:novo,updated_by:STATE.usuario.id}; if(novo==='concluida')upd.data_conclusao=a.data_conclusao; var r=await sb.from('acoes_corretivas').update(upd).eq('id',id); if(r.error) throw r.error; }catch(e){ console.warn('agMudarAcao',e); toast('Falha ao salvar.','err'); } }
+  toast('Status atualizado.','ok'); renderAgenda();
+}
+
+
 
 
 </script>
@@ -1812,7 +2041,7 @@ function drawModalTab(p,podeInsp,podeFoto){
 function _reRender(){
   if(typeof currentPage==='undefined') return;
   try{
-    var nm={dashboard:'renderDashboard',regen:'renderRegen',mapa:'renderMapa',seguranca:'renderSeguranca',relatorios:'renderRelatorios',historico:'renderHistorico',usuarios:'renderUsuarios',admin:'renderAdmin'}[currentPage];
+    var nm={dashboard:'renderDashboard',regen:'renderRegen',mapa:'renderMapa',seguranca:'renderSeguranca',relatorios:'renderRelatorios',historico:'renderHistorico',usuarios:'renderUsuarios',admin:'renderAdmin',agenda:'renderAgenda'}[currentPage];
     if(nm && typeof window[nm]==='function') window[nm]();
   }catch(e){ console.warn('_reRender',e); }
   try{renderSino();}catch(_){}

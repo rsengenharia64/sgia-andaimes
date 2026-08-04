@@ -924,6 +924,11 @@ function alertasLista(){
       out.push({sev:1,cod:p.cod,regen:regen,txt:'Inspeção vencida há '+Math.abs(diasEntre(hj,p.proxInspecao))+' dia(s)',ic:'⏰'});
     }
   });
+  (STATE.inspProg||[]).forEach(function(sp){
+    if(sp.status==='prevista' && sp.data_prevista && diasEntre(hj,_parseData((sp.data_prevista||'').slice(0,10)))<0){
+      out.push({sev:1,cod:'📅',regen:_escopoLabel(sp.escopo_tipo,sp.escopo_ref),txt:'Inspeção programada atrasada ('+fmtData(sp.data_prevista)+')',ic:'📅',alvo:'agenda'});
+    }
+  });
   out.sort(function(a,b){return a.sev-b.sev;});
   return out;
 }
@@ -935,8 +940,9 @@ function renderSino(){
 function abrirAlertas(){
   var a=alertasLista();
   var box=document.getElementById('modalBox'); if(!box) return;
-  var body = a.length ? a.map(function(x){
-    return '<div onclick="_irAlerta(\''+x.cod+'\')" style="display:flex;align-items:center;gap:10px;padding:11px 4px;border-bottom:1px solid var(--line);cursor:pointer">'
+  window.__alertas=a;
+  var body = a.length ? a.map(function(x,i){
+    return '<div onclick="_irAlertaIdx('+i+')" style="display:flex;align-items:center;gap:10px;padding:11px 4px;border-bottom:1px solid var(--line);cursor:pointer">'
       +'<span style="font-size:18px">'+x.ic+'</span>'
       +'<div style="flex:1"><div style="font-weight:700">'+esc(x.cod)+' • '+esc(x.regen)+'</div><div class="muted" style="font-size:12.5px">'+esc(x.txt)+'</div></div>'
       +'<span style="color:var(--txt3)">›</span></div>';
@@ -945,6 +951,13 @@ function abrirAlertas(){
   document.getElementById('modalBg').classList.add('open');
 }
 function _irAlerta(cod){ fecharModal(); try{ abrirFicha(cod); }catch(e){ console.warn(e); } }
+function _irAlertaIdx(i){ var a=(window.__alertas||[])[i]; fecharModal(); if(!a)return; if(a.alvo==='agenda'){ try{goPage('agenda');}catch(e){} } else { try{abrirFicha(a.cod);}catch(e){ console.warn(e); } } }
+function agRenderDashKpi(){
+  var w=document.getElementById('agKpiWrap'); if(!w) return;
+  if(!(STATE.programas&&STATE.programas.length)){ w.innerHTML=''; return; }
+  var m=agMetricas(30);
+  w.innerHTML='<div class="panel"><div class="panel-head"><div><h4>📅 Aderência ao programa de inspeções</h4><div class="sub">Previsto × realizado (últimos 30 dias)</div></div><button class="btn-sm sec" onclick="goPage(\'agenda\')">Abrir agenda</button></div><div class="kpi-grid"><div class="kpi blue"><div class="lab">Previstas</div><div class="val">'+m.prev+'</div></div><div class="kpi green"><div class="lab">Realizadas</div><div class="val">'+m.real+'</div></div><div class="kpi red"><div class="lab">Atrasadas</div><div class="val">'+m.atr+'</div></div><div class="kpi '+(m.ader>=90?"green":m.ader>=70?"yellow":"red")+'"><div class="lab">Aderência</div><div class="val">'+m.ader+'%</div><div class="pct">meta 90%</div></div></div></div>';
+}
 function _alertaLoginToast(){
   if(STATE._alertToastShown) return;
   var a=alertasLista(); if(!a.length) return;
@@ -1060,6 +1073,7 @@ function ultimaAtualizacao(){
 function renderDashboard(){
   if(STATE.usuario&&STATE.usuario.real&&!STATE.platCarregado){platCarregar();}
   if(STATE.usuario&&STATE.usuario.real&&!STATE.segCarregado){segCarregar();}
+  if(STATE.usuario&&STATE.usuario.real&&!STATE.agendaCarregado){agendaCarregar();}
   const s=stats();
   const c=document.getElementById('content');
   // barra de disponibilidade proporcional
@@ -1137,8 +1151,10 @@ function renderDashboard(){
       <span>${s.vencidas} inspeção(ões) vencida(s)</span>
     </div>
   </div>
+  <div id="agKpiWrap"></div>
   <div id="indicadoresWrap" style="margin-top:2px"></div>`;
   renderIndicadores();
+  agRenderDashKpi();
 }
 
 /* ===== INDICADORES — Integridade & Segurança (dado real) ===== */
@@ -1301,7 +1317,7 @@ function _tbl(cols,rows){
 function gerarRelatorioAnalise(){
   var w=window.open('','_blank');if(!w){toast('Permita pop-ups para gerar o relatório.','err');return;}
   var F={de:_val('anDe'),ate:_val('anAte'),regen:_val('anRegen'),status:_val('anStatus')};
-  var opt={ind:_chk('chkInd'),insp:_chk('chkInsp'),nc:_chk('chkNC'),oc:_chk('chkOc'),rec:_chk('chkRec'),aud:_chk('chkAud')};
+  var opt={ind:_chk('chkInd'),insp:_chk('chkInsp'),nc:_chk('chkNC'),oc:_chk('chkOc'),rec:_chk('chkRec'),agenda:_chk('chkAgenda'),aud:_chk('chkAud')};
   var R=_recData(F);var P=P_PRINT;
   var regNome=(F.regen&&F.regen!=='todos')?(((CONFIG.regeneradores.find(function(r){return r.id==Number(F.regen);})||{}).nome)||F.regen):'Todos';
   var stMap={liberada:'Liberada',restrita:'Restrita',interditada:'Interditada',pendente:'Sem inspeção'};
@@ -1322,6 +1338,16 @@ function gerarRelatorioAnalise(){
     else parts.push('<div style="font-size:12.5px;color:#64748b;margin-bottom:12px">Sem ocorrências no período/filtro.</div>');}
   if(opt.rec){parts.push(h2('Recomendações — desenvolvimento do time de montagem'));
     parts.push(_recomendacoes().map(function(r){return '<div style="border-left:3px solid #2563eb;background:#f8fafc;padding:8px 12px;margin:0 0 8px"><div style="font-size:13px;font-weight:700;color:#0f172a">'+r.t+'</div><div style="font-size:12.5px;color:#475569;margin-top:2px">'+r.x+'</div></div>';}).join(''));}
+  if(opt.agenda){
+    parts.push(h2('Programa de inspeções — previsto × realizado (30 dias)'));
+    var am=agMetricas(30);
+    parts.push('<div class="meta" style="margin:4px 0 10px;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#475569"><span>Previstas: <b style="color:#0f172a">'+am.prev+'</b></span><span>Realizadas: <b style="color:#0f172a">'+am.real+'</b></span><span>Atrasadas: <b style="color:#0f172a">'+am.atr+'</b></span><span>Aderência: <b style="color:#0f172a">'+am.ader+'%</b></span></div>');
+    if((STATE.programas||[]).length){ parts.push(_tbl(['Escopo','Cadência','Itens inspecionados','Desde'], STATE.programas.map(function(p){return [_escopoLabel(p.escopo_tipo,p.escopo_ref),_cadenciaLabel(p),(p.itens||[]).map(_itemNome).join('; ')||'—',fmtData(p.vigencia_inicio)];}))); }
+    else parts.push('<div style="font-size:12.5px;color:#64748b;margin-bottom:12px">Nenhuma programação cadastrada.</div>');
+    parts.push(h2('Plano de ação — não conformidades ('+(STATE.acoes||[]).length+')'));
+    if((STATE.acoes||[]).length){ parts.push(_tbl(['Item','Descrição','Responsável','Prazo','Prioridade','Status'], STATE.acoes.map(function(a){return [a.item_nc||a.plataforma_cod||'—',a.descricao||'—',a.responsavel||'—',a.prazo?fmtData(a.prazo):'—',a.prioridade||'—',a.status||'—'];}))); }
+    else parts.push('<div style="font-size:12.5px;color:#64748b;margin-bottom:12px">Nenhuma ação corretiva registrada.</div>');
+  }
   if(opt.aud){parts.push(h2('Trilha de auditoria ('+R.aud.length+')'));
     if(R.aud.length){var r4=R.aud.slice(0,300).map(function(a){return [fmtDataHora(a.data),a.usuario+' ('+(a.perfil||'—')+')',a.acao,a.alvo||'—',a.detalhe||'—'];});parts.push(_tbl(['Data / Hora','Usuário','Ação','Alvo','Detalhe'],r4));}
     else parts.push('<div style="font-size:12.5px;color:#64748b;margin-bottom:12px">Sem registros de auditoria no período.</div>');}
@@ -1496,6 +1522,8 @@ async function agendaCarregar(){
     STATE.acoes=(ac.data||[]);
     STATE.agendaCarregado=true;
     if(typeof currentPage!=='undefined' && currentPage==='agenda') renderAgenda();
+    try{renderSino();}catch(_){}
+    if(typeof currentPage!=='undefined' && currentPage==='dashboard') agRenderDashKpi();
   }catch(e){ console.warn('agendaCarregar',e); }
 }
 function agendaSeedDemo(){
@@ -3045,6 +3073,7 @@ async function gerarEtiquetasA4(){
   toast(`${plats.length} etiqueta(s) geradas!`,'ok');
 }
 function renderRelatorios(){
+  if(STATE.usuario&&STATE.usuario.real&&!STATE.agendaCarregado){agendaCarregar();}
   const c=document.getElementById('content');
   c.innerHTML=`
   <div class="page-head">
@@ -3068,6 +3097,7 @@ function renderRelatorios(){
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="chkNC" checked> Não conformidades</label>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="chkOc" checked> Ocorrências</label>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="chkRec" checked> Recomendações</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="chkAgenda" checked> Agenda e plano de ação</label>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="chkAud"> Trilha de auditoria</label>
       </div>
       <button class="btn-sm" onclick="gerarRelatorioAnalise()">🖨️ Gerar relatório</button></div>

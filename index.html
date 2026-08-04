@@ -1342,7 +1342,7 @@ function gerarRelatorioAnalise(){
     parts.push(h2('Programa de inspeções — previsto × realizado (30 dias)'));
     var am=agMetricas(30);
     parts.push('<div class="meta" style="margin:4px 0 10px;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#475569"><span>Previstas: <b style="color:#0f172a">'+am.prev+'</b></span><span>Realizadas: <b style="color:#0f172a">'+am.real+'</b></span><span>Atrasadas: <b style="color:#0f172a">'+am.atr+'</b></span><span>Aderência: <b style="color:#0f172a">'+am.ader+'%</b></span></div>');
-    if((STATE.programas||[]).length){ parts.push(_tbl(['Escopo','Cadência','Itens inspecionados','Desde'], STATE.programas.map(function(p){return [_escopoLabel(p.escopo_tipo,p.escopo_ref),_cadenciaLabel(p),(p.itens||[]).map(_itemNome).join('; ')||'—',fmtData(p.vigencia_inicio)];}))); }
+    if((STATE.programas||[]).length){ parts.push(_tbl(['Escopo','Cadência','Responsável','Itens inspecionados','Desde'], STATE.programas.map(function(p){return [_escopoLabel(p.escopo_tipo,p.escopo_ref),_cadenciaLabel(p),_usuarioNome(p.responsavel_id)||'—',(p.itens||[]).map(_itemNome).join('; ')||'—',fmtData(p.vigencia_inicio)];}))); }
     else parts.push('<div style="font-size:12.5px;color:#64748b;margin-bottom:12px">Nenhuma programação cadastrada.</div>');
     parts.push(h2('Plano de ação — não conformidades ('+(STATE.acoes||[]).length+')'));
     if((STATE.acoes||[]).length){ parts.push(_tbl(['Item','Descrição','Responsável','Prazo','Prioridade','Status'], STATE.acoes.map(function(a){return [a.item_nc||a.plataforma_cod||'—',a.descricao||'—',a.responsavel||'—',a.prazo?fmtData(a.prazo):'—',a.prioridade||'—',a.status||'—'];}))); }
@@ -1506,6 +1506,7 @@ async function gerarApresentacaoPPTX(){
    ================================================================== */
 function _regNome(num){ var r=CONFIG.regeneradores.find(function(x){return String(x.id)===String(num);}); return r?r.nome:('Reg '+num); }
 function _escopoLabel(tipo,ref){ if(tipo==='todas')return 'Todas as plataformas'; if(tipo==='regenerador')return _regNome(ref); if(tipo==='plataforma')return 'Plataforma '+ref; return ref||'—'; }
+function _usuarioNome(id){ if(!id)return ''; try{ var u=(usuariosLista()||[]).find(function(x){return String(x.id)===String(id);}); return u?u.nome:''; }catch(e){ return ''; } }
 function _diasDaFreq(freq){ return ({1:[2],2:[1,4],3:[1,3,5],4:[1,2,4,5],5:[1,2,3,4,5],7:[0,1,2,3,4,5,6]})[freq]||[1,3,5]; }
 function _ymd(d){ var x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
 function _inicioSemana(off){ var d=new Date(); d.setHours(0,0,0,0); var dow=(d.getDay()+6)%7; d.setDate(d.getDate()-dow+(off||0)*7); return d; }
@@ -1545,6 +1546,7 @@ function agendaSeedDemo(){
 }
 function renderAgenda(){
   if(STATE.usuario&&STATE.usuario.real&&!STATE.agendaCarregado){ agendaCarregar(); }
+  if(STATE.usuario&&STATE.usuario.real&&!STATE.usuariosCarregado && typeof usuariosCarregar==='function'){ usuariosCarregar(); }
   if(!(STATE.usuario&&STATE.usuario.real) && !STATE._agendaSeed){ agendaSeedDemo(); }
   var pode=temPerm('agenda');
   var c=document.getElementById('content');
@@ -1605,7 +1607,7 @@ function agAbrirSlot(id){
   var pode=temPerm('agenda')||temPerm('inspecionar'); var st=_slotStatus(s);
   var stl={realizada:'Realizada',prevista:'Programada',atrasada:'Atrasada',cancelada:'Cancelada'};
   var box=document.getElementById('modalBox');
-  box.innerHTML='<div class="modal-head"><div><div class="mt">📅 '+esc(_escopoLabel(s.escopo_tipo,s.escopo_ref))+'</div><div class="mc">Prevista para '+fmtData(s.data_prevista)+' • '+stl[st]+'</div></div><button class="modal-x" onclick="fecharModal()">✕</button></div><div class="modal-body">'
+  box.innerHTML='<div class="modal-head"><div><div class="mt">📅 '+esc(_escopoLabel(s.escopo_tipo,s.escopo_ref))+'</div><div class="mc">Prevista para '+fmtData(s.data_prevista)+' • '+stl[st]+(_usuarioNome(s.responsavel_id)?' • 👤 '+esc(_usuarioNome(s.responsavel_id)):'')+'</div></div><button class="modal-x" onclick="fecharModal()">✕</button></div><div class="modal-body">'
    + (s.status!=='realizada' && pode ? '<button class="btn-sm" style="width:100%;justify-content:center;margin-bottom:8px" onclick="agMarcar(\''+s.id+'\',\'realizada\')">✅ Marcar como realizada</button>':'')
    + (s.status==='realizada'?'<div class="scope-note">✓ Realizada em '+(s.realizado_em?fmtDataHora(s.realizado_em):'—')+'</div>':'')
    + (s.status!=='cancelada' && s.status!=='realizada' && pode ? '<button class="btn-sm sec" style="width:100%;justify-content:center" onclick="agMarcar(\''+s.id+'\',\'cancelada\')">Cancelar esta inspeção</button>':'')
@@ -1627,7 +1629,7 @@ function agRenderProgramas(){
   if(!lista.length){ w.innerHTML='<div class="empty"><div class="eic">📅</div>Nenhuma programação com esse filtro.</div>'; return; }
   w.innerHTML=lista.map(function(p){
     var its=(p.itens||[]); var itTxt=its.length?its.slice(0,3).map(function(v){return esc(_itemNome(v).split(' ')[0]);}).join(', ')+(its.length>3?' +'+(its.length-3):''):'sem itens definidos';
-    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)"><span style="font-size:18px">📌</span><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--txt);font-weight:600">'+esc(_escopoLabel(p.escopo_tipo,p.escopo_ref))+'</div><div class="muted" style="font-size:11.5px">'+_cadenciaLabel(p)+' · desde '+fmtData(p.vigencia_inicio)+'</div><div class="muted" style="font-size:11px;margin-top:2px">🔎 '+its.length+' item(ns): '+itTxt+'</div></div>'
+    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)"><span style="font-size:18px">📌</span><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--txt);font-weight:600">'+esc(_escopoLabel(p.escopo_tipo,p.escopo_ref))+'</div><div class="muted" style="font-size:11.5px">'+_cadenciaLabel(p)+' · desde '+fmtData(p.vigencia_inicio)+(_usuarioNome(p.responsavel_id)?' · 👤 '+esc(_usuarioNome(p.responsavel_id)):'')+'</div><div class="muted" style="font-size:11px;margin-top:2px">🔎 '+its.length+' item(ns): '+itTxt+'</div></div>'
      + (pode?'<button class="btn-sm danger" style="padding:5px 8px;font-size:11px" onclick="agExcluirPrograma(\''+p.id+'\')">🗑️</button>':'')+'</div>';
   }).join('');
 }
@@ -1713,6 +1715,7 @@ function modalNovaProgramacao(){
    +'<div class="field" id="pgRefWrap"></div>'
    +'<div class="field"><label>Cadência / periodicidade</label><select id="pgFreq" onchange="agCadHelp()"><option value="diaria">Diária</option><option value="1">1× por semana</option><option value="2">2× por semana</option><option value="3" selected>3× por semana</option><option value="4">4× por semana</option><option value="5">5× por semana</option><option value="15d">A cada 15 dias</option><option value="30d">A cada 30 dias</option><option value="60d">A cada 60 dias</option></select></div>'
    +'<div class="field" id="pgItens"></div>'
+   +'<div class="field"><label>Responsável pela inspeção</label><select id="pgResp"><option value="">— definir depois —</option>'+(usuariosLista()||[]).map(function(u){return '<option value="'+u.id+'">'+esc(u.nome)+'</option>';}).join('')+'</select></div>'
    +'<div class="row-2"><div class="field"><label>Início</label><input id="pgIni" type="date" value="'+_ymd(new Date())+'"></div><div class="field"><label>Fim (opcional)</label><input id="pgFim" type="date"></div></div>'
    +'<button class="btn-sm" style="width:100%;justify-content:center" onclick="salvarPrograma()">💾 Criar e gerar calendário</button>'
    +'<div class="scope-note" style="margin-top:8px">Gera o calendário automaticamente. Itens e frequência conforme NR-18/NR-35 — validar com o TST/SESMT.</div></div>';
@@ -1738,6 +1741,7 @@ async function salvarPrograma(){
   else if(freqRaw==='diaria'){ freq=7; dias=_diasDaFreq(7); }
   else { freq=parseInt(freqRaw,10); dias=_diasDaFreq(freq); }
   var itens=[].slice.call(document.querySelectorAll('.pgItem:checked')).map(function(c){return c.value;});
+  var respId=(document.getElementById('pgResp')||{}).value||null;
   var horizon = intervalo? Math.min(240, Math.max(60, intervalo*4)) : 60;
   var slots=[]; var d0=new Date(ini+'T12:00:00'); var lim=new Date(d0); lim.setDate(lim.getDate()+horizon); var fimD=fim?new Date(fim+'T12:00:00'):null;
   if(intervalo){ for(var k=0;;k++){ var dd=new Date(d0); dd.setDate(dd.getDate()+k*intervalo); if(dd>lim||(fimD&&dd>fimD))break; slots.push(_ymd(dd)); } }
@@ -1745,15 +1749,15 @@ async function salvarPrograma(){
   var real=STATE.usuario&&STATE.usuario.real;
   if(real){
     try{ var sb=sbClient(); if(!STATE.contratoId) await segGarantirContrato(sb);
-      var pi=await sb.from('programas_inspecao').insert({contrato_id:STATE.contratoId,escopo_tipo:tipo,escopo_ref:tipo==='todas'?null:ref,frequencia:freq,intervalo_dias:intervalo,dias_semana:dias,itens:itens,vigencia_inicio:ini,vigencia_fim:fim,created_by:STATE.usuario.id,updated_by:STATE.usuario.id}).select('id').single();
+      var pi=await sb.from('programas_inspecao').insert({contrato_id:STATE.contratoId,escopo_tipo:tipo,escopo_ref:tipo==='todas'?null:ref,frequencia:freq,intervalo_dias:intervalo,dias_semana:dias,itens:itens,responsavel_id:respId,vigencia_inicio:ini,vigencia_fim:fim,created_by:STATE.usuario.id,updated_by:STATE.usuario.id}).select('id').single();
       if(pi.error) throw pi.error; var pid=pi.data.id;
-      var rows=slots.map(function(dt){return {contrato_id:STATE.contratoId,programa_id:pid,data_prevista:dt,escopo_tipo:tipo,escopo_ref:tipo==='todas'?null:ref,status:'prevista'};});
+      var rows=slots.map(function(dt){return {contrato_id:STATE.contratoId,programa_id:pid,data_prevista:dt,escopo_tipo:tipo,escopo_ref:tipo==='todas'?null:ref,responsavel_id:respId,status:'prevista'};});
       if(rows.length){ var r2=await sb.from('inspecoes_programadas').insert(rows); if(r2.error) throw r2.error; }
     }catch(e){ console.warn('salvarPrograma',e); toast('Erro ao salvar no servidor.','err'); return; }
     await agendaCarregar();
   } else {
-    var pid2='pg'+uid(); STATE.programas.unshift({id:pid2,escopo_tipo:tipo,escopo_ref:tipo==='todas'?null:ref,frequencia:freq,intervalo_dias:intervalo,itens:itens,vigencia_inicio:ini});
-    slots.forEach(function(dt){ STATE.inspProg.push({id:'sp'+uid(),programa_id:pid2,data_prevista:dt,escopo_tipo:tipo,escopo_ref:tipo==='todas'?null:ref,status:'prevista'}); });
+    var pid2='pg'+uid(); STATE.programas.unshift({id:pid2,escopo_tipo:tipo,escopo_ref:tipo==='todas'?null:ref,frequencia:freq,intervalo_dias:intervalo,itens:itens,responsavel_id:respId,vigencia_inicio:ini});
+    slots.forEach(function(dt){ STATE.inspProg.push({id:'sp'+uid(),programa_id:pid2,data_prevista:dt,escopo_tipo:tipo,escopo_ref:tipo==='todas'?null:ref,responsavel_id:respId,status:'prevista'}); });
   }
   logAudit('Programação de inspeção criada',_escopoLabel(tipo,ref),_cadenciaLabel({intervalo_dias:intervalo,frequencia:freq})+' • '+slots.length+' previstas • '+itens.length+' itens');
   toast('Programação criada — '+slots.length+' inspeções no calendário!','ok'); fecharModal(); renderAgenda();

@@ -570,7 +570,7 @@ let STATE = {
 const LETRAS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const STATUS_MAP = {
   liberada:   {key:"g", label:"Liberada",    ic:"✅", badge:"g"},
-  restrita:   {key:"y", label:"Restrita",    ic:"⚠️", badge:"y"},
+  restrita:   {key:"y", label:"Liberado com restrição",    ic:"⚠️", badge:"y"},
   interditada:{key:"r", label:"Interditada", ic:"⛔", badge:"r"},
   pendente:   {key:"c", label:"Sem inspeção",ic:"⏳", badge:"c"}
 };
@@ -1087,7 +1087,7 @@ function renderDashboard(){
   <div class="kpi-grid">
     <div class="kpi blue"><div class="lab">Total de plataformas</div><div class="val">${s.total}</div><div class="meta">${CONFIG.regeneradores.length} regeneradores • ${CONFIG.plataformasPorRegen} por equipamento</div></div>
     <div class="kpi green"><div class="lab">Liberadas</div><div class="val">${s.liberada}</div><div class="pct" style="color:var(--verde)">${s.pctDisp}% disponível</div></div>
-    <div class="kpi yellow"><div class="lab">Com restrição</div><div class="val">${s.restrita}</div><div class="meta">requerem atenção</div></div>
+    <div class="kpi yellow"><div class="lab">Liberado com restrição</div><div class="val">${s.restrita}</div><div class="meta">requerem atenção</div></div>
     <div class="kpi red"><div class="lab">Interditadas</div><div class="val">${s.interditada}</div><div class="meta">${s.pendente} sem inspeção</div></div>
   </div>
 
@@ -1101,7 +1101,7 @@ function renderDashboard(){
     </div>
     <div class="legend">
       <div><span class="dot g"></span>Liberada (${s.liberada})</div>
-      <div><span class="dot y"></span>Restrição (${s.restrita})</div>
+      <div><span class="dot y"></span>Liberado com restrição (${s.restrita})</div>
       <div><span class="dot r"></span>Interditada (${s.interditada})</div>
       <div><span class="dot c"></span>Sem inspeção (${s.pendente})</div>
     </div>
@@ -1320,7 +1320,7 @@ function gerarRelatorioAnalise(){
   var opt={ind:_chk('chkInd'),insp:_chk('chkInsp'),nc:_chk('chkNC'),oc:_chk('chkOc'),rec:_chk('chkRec'),agenda:_chk('chkAgenda'),aud:_chk('chkAud')};
   var R=_recData(F);var P=P_PRINT;
   var regNome=(F.regen&&F.regen!=='todos')?(((CONFIG.regeneradores.find(function(r){return r.id==Number(F.regen);})||{}).nome)||F.regen):'Todos';
-  var stMap={liberada:'Liberada',restrita:'Restrita',interditada:'Interditada',pendente:'Sem inspeção'};
+  var stMap={liberada:'Liberada',restrita:'Liberado com restrição',interditada:'Interditada',pendente:'Sem inspeção'};
   var stNome=(F.status&&F.status!=='todos')?(stMap[F.status]||F.status):'Todos';
   var periodo=(F.de||F.ate)?((F.de?fmtData(F.de):'início')+' até '+(F.ate?fmtData(F.ate):'hoje')):'Todo o histórico';
   var agora=new Date().toLocaleDateString('pt-BR')+' '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
@@ -1817,7 +1817,7 @@ function renderRegen(){
     <input type="text" id="buscaPlat" placeholder="🔍 Buscar em todos os regeneradores (ex: 2H)" oninput="STATE.busca=this.value;drawPlatGrid()">
     <button class="fchip ${STATE.filtroStatus==='todos'?'active':''}" onclick="setFiltro('todos')">Todas</button>
     <button class="fchip ${STATE.filtroStatus==='liberada'?'active':''}" onclick="setFiltro('liberada')">✅ Liberadas</button>
-    <button class="fchip ${STATE.filtroStatus==='restrita'?'active':''}" onclick="setFiltro('restrita')">⚠️ Restrição</button>
+    <button class="fchip ${STATE.filtroStatus==='restrita'?'active':''}" onclick="setFiltro('restrita')">⚠️ Liberado com restrição</button>
     <button class="fchip ${STATE.filtroStatus==='interditada'?'active':''}" onclick="setFiltro('interditada')">⛔ Interditadas</button>
     <button class="fchip ${STATE.filtroStatus==='pendente'?'active':''}" onclick="setFiltro('pendente')">⏳ Sem inspeção</button>
     ${podeAdmin?`<button class="fchip ${STATE.filtroStatus==='inativas'?'active':''}" onclick="setFiltro('inativas')">🔕 Desativadas</button>`:''}
@@ -1915,7 +1915,7 @@ function modalNovaPlataforma(){
       <select id="npStatus">
         <option value="pendente">⏳ Sem inspeção</option>
         <option value="liberada">✅ Liberada</option>
-        <option value="restrita">⚠️ Restrita</option>
+        <option value="restrita">⚠️ Liberado com restrição</option>
         <option value="interditada">⛔ Interditada</option>
       </select></div>
     <button class="btn-sm" style="width:100%;justify-content:center" onclick="salvarNovaPlataforma()">💾 Adicionar plataforma</button>
@@ -2044,7 +2044,7 @@ function drawModalTab(p,podeInsp,podeFoto){
         <div class="panel-head"><h4>Alterar situação</h4><div class="sub">Registra na auditoria</div></div>
         <div class="status-set">
           <button class="status-btn ${p.status==='liberada'?'act-g':''}" onclick="setStatus('liberada')"><span class="sbi">✅</span>Liberada</button>
-          <button class="status-btn ${p.status==='restrita'?'act-y':''}" onclick="setStatus('restrita')"><span class="sbi">⚠️</span>Restrita</button>
+          <button class="status-btn ${p.status==='restrita'?'act-y':''}" onclick="setStatus('restrita')"><span class="sbi">⚠️</span>Liberado com restrição</button>
           <button class="status-btn ${p.status==='interditada'?'act-r':''}" onclick="setStatus('interditada')"><span class="sbi">⛔</span>Interditada</button>
         </div>
         <button class="btn-sm" style="width:100%;justify-content:center;margin-top:6px" onclick="salvarInspecao(this)">💾 Salvar inspeção completa</button>
@@ -2472,7 +2472,7 @@ function renderMapa(){
 
   <div class="legend" style="margin-top:14px">
     <div><span class="dot g"></span>Liberada</div>
-    <div><span class="dot y"></span>Restrição</div>
+    <div><span class="dot y"></span>Liberado com restrição</div>
     <div><span class="dot r"></span>Interditada</div>
     <div><span class="dot c"></span>Sem inspeção</div>
     <div style="margin-left:auto" class="muted">Mapa atual: <b style="color:var(--txt2)">${mapaInfo.nome}</b></div>
@@ -3092,7 +3092,7 @@ function renderRelatorios(){
       </div>
       <div class="row-2" style="gap:8px">
         <select id="anRegen" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px;color:var(--txt);margin-bottom:8px"><option value="todos">Todos regeneradores</option>${CONFIG.regeneradores.map(r=>`<option value="${r.id}">${r.nome}</option>`).join('')}</select>
-        <select id="anStatus" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px;color:var(--txt);margin-bottom:8px"><option value="todos">Todos os status</option><option value="liberada">Liberada</option><option value="restrita">Restrita</option><option value="interditada">Interditada</option><option value="pendente">Sem inspeção</option></select>
+        <select id="anStatus" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px;color:var(--txt);margin-bottom:8px"><option value="todos">Todos os status</option><option value="liberada">Liberada</option><option value="restrita">Liberado com restrição</option><option value="interditada">Interditada</option><option value="pendente">Sem inspeção</option></select>
       </div>
       <div style="font-size:12px;color:var(--txt2);margin:4px 0 4px">Incluir no relatório:</div>
       <div style="display:flex;flex-wrap:wrap;gap:10px 16px;margin-bottom:10px;font-size:13px;color:var(--txt2)">
@@ -3211,7 +3211,7 @@ function gerarPDF(tipo){
     linha(`Emitido por: ${STATE.usuario.nome} (${PERFIS[STATE.usuario.perfil].nome})`);y+=2;
     linha('RESUMO',true);
     linha(`Total de plataformas: ${s.total}`);
-    linha(`Liberadas: ${s.liberada}  |  Restritas: ${s.restrita}  |  Interditadas: ${s.interditada}  |  Sem inspeção: ${s.pendente}`);
+    linha(`Liberadas: ${s.liberada}  |  Liberado com restrição: ${s.restrita}  |  Interditadas: ${s.interditada}  |  Sem inspeção: ${s.pendente}`);
     linha(`Disponibilidade: ${s.pctDisp}%   |   Inspeções vencidas: ${s.vencidas}`);y+=3;
     linha('PLATAFORMAS',true);
     tabela(platsAtivas());
@@ -3224,7 +3224,7 @@ function gerarPDF(tipo){
     const rs=stats(lista);
     titulo('Relatório — '+reg.nome);
     linha(`Emissão: ${fmtDataHora(hoje())} por ${STATE.usuario.nome}`);y+=2;
-    linha(`Plataformas: ${rs.total}  |  Liberadas: ${rs.liberada}  |  Restritas: ${rs.restrita}  |  Interditadas: ${rs.interditada}`,true);
+    linha(`Plataformas: ${rs.total}  |  Liberadas: ${rs.liberada}  |  Liberado com restrição: ${rs.restrita}  |  Interditadas: ${rs.interditada}`,true);
     linha(`Disponibilidade: ${rs.pctDisp}%`);y+=3;
     tabela(lista);
     nome='regenerador_'+rid;
@@ -3300,7 +3300,7 @@ async function gerarPDFgeral(){
   linha(`Emitido por: ${STATE.usuario.nome} (${PERFIS[STATE.usuario.perfil].nome})`);y+=2;
   linha('RESUMO',true);
   linha(`Total de plataformas: ${s.total}`);
-  linha(`Liberadas: ${s.liberada}  |  Restritas: ${s.restrita}  |  Interditadas: ${s.interditada}  |  Sem inspeção: ${s.pendente}`);
+  linha(`Liberadas: ${s.liberada}  |  Liberado com restrição: ${s.restrita}  |  Interditadas: ${s.interditada}  |  Sem inspeção: ${s.pendente}`);
   linha(`Disponibilidade: ${s.pctDisp}%   |   Inspeções vencidas: ${s.vencidas}`);y+=4;
 
   // ---- MAPA DAS CARCAÇAS (imagem + indicadores coloridos) ----
@@ -3316,7 +3316,7 @@ async function gerarPDFgeral(){
     doc.addImage(mapa.dataUrl,'JPEG',x,y,imgW,imgH);
     y+=imgH+4;
     doc.setFontSize(8);doc.setTextColor(120);
-    doc.text('Verde = Liberada   |   Amarelo = Restrição   |   Vermelho = Interditada   |   Cinza = Sem inspeção',14,y);
+    doc.text('Verde = Liberada   |   Amarelo = Liberado com restrição   |   Vermelho = Interditada   |   Cinza = Sem inspeção',14,y);
     doc.setTextColor(33);doc.setFontSize(10);y+=8;
   } else { linha('(Imagem do mapa não disponível.)'); }
 

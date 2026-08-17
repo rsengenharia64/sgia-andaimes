@@ -3,7 +3,11 @@
    mais nova quando online) e cache como fallback quando offline. NÃO intercepta
    chamadas ao Supabase (POST/API) — os dados dinâmicos passam direto, e a fila de
    sincronização do app cuida das gravações feitas sem conexão. */
-const CACHE = 'sgia-cache-v1';
+/* IMPORTANTE: ao publicar uma nova versao do index.html, incremente VERSION.
+   O nome do cache muda junto, e o evento 'activate' apaga os caches antigos,
+   garantindo que ninguem fique preso a uma versao velha do app. */
+const VERSION = '2026-08-17';
+const CACHE = 'sgia-cache-' + VERSION;
 const APP_SHELL = [
   './',
   './index.html',
